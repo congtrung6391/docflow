@@ -1,6 +1,6 @@
 # docflow — Document-Driven Kanban for Pi
 
-A pi extension that combines document-first-wf's **document generation & linking** with claude-kanban's **session tracking & kanban boards** — no phase gates, no ceremony.
+A pi extension that combines document-first-wf's **document generation & linking** with **session tracking & kanban boards** — no phase gates, no ceremony.
 
 ## What It Is
 
@@ -42,7 +42,7 @@ cp src/index.ts ~/.pi/agent/extensions/docflow/index.ts
 # 3. Assign current session
 /docflow-project myproject
 
-# 4. Start working — Claude gets briefed automatically
+# 4. Start working — Pi coding agent gets briefed automatically
 #    When making decisions: docflow_write (plan, "scope changed to...")
 #    When claiming work:    docflow_task (claim, "Implement auth")
 #    When done:             docflow_task (done)
@@ -52,7 +52,7 @@ cp src/index.ts ~/.pi/agent/extensions/docflow/index.ts
 
 | Source Feature | docflow Equivalent | Improvement |
 |---------------|-------------------|-------------|
-| Claude Code hooks | Pi events + tools | Immediate, synchronous |
+| Pi coding agent hooks | Pi events + tools | Immediate, synchronous |
 | LaunchAgent | No background process needed | Cross-platform |
 | Phase gates | None — lightweight | No ceremony |
 | Per-phase docs | 7 core docs + on-demand | Simple, focused |
@@ -110,7 +110,7 @@ AI agents draw diagrams automatically using two tools:
 | `draw_excalidraw` | Free-form: architecture, wireframes, brainstorming |
 | `draw_mermaid` | Structured: sequence, flowchart, state, gantt, class, ER |
 
-Just ask Claude to "draw the architecture" or "show the user flow" — it picks the right tool and generates valid diagrams automatically.
+Just ask Pi coding agent to "draw the architecture" or "show the user flow" — it picks the right tool and generates valid diagrams automatically.
 
 ## File Layout
 

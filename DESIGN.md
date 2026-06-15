@@ -1,21 +1,21 @@
 # docflow — Document-Driven Kanban for Pi
 
-A pi extension that combines document-first-wf's **document generation & linking** with claude-kanban's **session tracking & kanban boards** — no phase gates, no ceremony, lightweight and automatic.
+A pi extension that combines document-first-wf's **document generation & linking** with **session tracking & kanban boards** — no phase gates, no ceremony, lightweight and automatic.
 
 ---
 
 ## Why Pi Changes Everything
 
-Both source tools depend on **Claude Code hooks** (SessionStart, SessionEnd, etc.) which pi doesn't have. But pi's event system gives us better primitives:
+Both source tools depend on **Pi coding agent hooks** (SessionStart, SessionEnd, etc.) which pi doesn't have. But pi's event system gives us better primitives:
 
-| claude-kanban / document-first-wf | pi equivalent |
-|-----------------------------------|--------------|
-| Claude Code hook: SessionStart | `pi.on("session_start")` |
-| Claude Code hook: SessionEnd | `pi.on("agent_end")` or `pi.on("turn_end")` — detect inactivity |
-| Claude Code hook: UserPromptSubmit | `pi.on("context")` — runs before every LLM call |
-| Claude Code hook: Stop | `pi.on("session_shutdown")` |
+| Source tool feature / document-first-wf | pi equivalent |
+|-----------------------------------------|--------------|
+| Session hook: SessionStart | `pi.on("session_start")` |
+| Session hook: SessionEnd | `pi.on("agent_end")` or `pi.on("turn_end")` — detect inactivity |
+| Session hook: UserPromptSubmit | `pi.on("context")` — runs before every LLM call |
+| Session hook: Stop | `pi.on("session_shutdown")` |
 | Background reconciler via launchd | **Not needed** — pi is event-driven; every action triggers updates immediately |
-| Slash commands via Claude Code | `pi.registerCommand()` |
+| Slash commands via Pi coding agent | `pi.registerCommand()` |
 | Skills | `pi.registerTool()` with `promptGuidelines` + `before_agent_start` injection |
 
 **Key insight:** We don't need a background reconciler at all. Pi events are synchronous — when the user runs a command or the agent calls a tool, we update everything immediately.
@@ -62,7 +62,7 @@ Both source tools depend on **Claude Code hooks** (SessionStart, SessionEnd, etc
 │  │  - docflow_design │   │  user_bash (optional capture)    │
 │  │  - docflow_bug    │   │                                  │
 │  │  - docflow_patch  │   │  tool_call / tool_result         │
-│  │  - docflow_note   │   │  (intercept Claude docs writing) │
+│  │  - docflow_note   │   │  (intercept Pi coding agent docs writing) │
 │  │  - docflow_status │   │                                  │
 │  └───────────────────┘   │  commands                        │
 │                          │  - /docflow-setup                 │
@@ -216,7 +216,7 @@ parameters: {
 
 Reads a document from the shared vault. Used by:
 - The briefing system (injects into context)
-- Claude Code itself when it needs to read project docs
+- Pi coding agent itself when it needs to read project docs
 - User queries
 
 ### 2. `docflow_write` — Write/append to project document
@@ -340,7 +340,7 @@ pi.on("before_agent_start", async (event, ctx) => {
 ```typescript
 pi.on("context", async (event, ctx) => {
   // 1. Update session last_activity timestamp
-  // 2. If Claude wrote a doc, refresh _Context.md
+  // 2. If Pi coding agent wrote a doc, refresh _Context.md
   // 3. Update session status (active/idle/stale)
 });
 ```
@@ -370,10 +370,10 @@ pi.on("session_shutdown", async (event, ctx) => {
 
 ```typescript
 pi.on("tool_call", async (event, ctx) => {
-  // Intercept Claude's file writes to:
-  // 1. Auto-register new docs if Claude creates Plan.md, Design.md, etc.
-  // 2. Extract task information from Claude's tool calls
-  // 3. Auto-log decisions if Claude mentions them
+  // Intercept Pi coding agent's file writes to:
+  // 1. Auto-register new docs if Pi coding agent creates Plan.md, Design.md, etc.
+  // 2. Extract task information from Pi coding agent's tool calls
+  // 3. Auto-log decisions if Pi coding agent mentions them
 });
 ```
 
@@ -455,10 +455,10 @@ traces_to:
 
 | Source Feature | docflow Equivalent | Improvement |
 |---------------|-------------------|-------------|
-| Claude Code hooks → event log | Pi events → direct tool calls | No background reconciler needed |
+| Pi coding agent hooks → event log | Pi events → direct tool calls | No background reconciler needed |
 | LaunchAgent (macOS only) | Pi event system (platform-agnostic) | Cross-platform |
-| `/claude-kanban:note plan` | `docflow_read` + `docflow_write` tools | More flexible, composable |
-| `/claude-kanban:task <text>` | `docflow_task` tool with actions | More actions (new/claim/done/block/list) |
+| Original slash commands | `docflow_read` + `docflow_write` tools | More flexible, composable |
+| Original `/task` command | `docflow_task` tool with actions | More actions (new/claim/done/block/list) |
 | Proactive skill | `before_agent_start` + `context` events | Built into pi, always on |
 | Phase gates (document-first) | No gates, auto-injection | Lightweight, no ceremony |
 | Context handoff manifests | `_Context.md` + `before_agent_start` | Simpler, single source of truth |
@@ -501,7 +501,7 @@ traces_to:
 - [ ] Master index (`_Index.md`)
 - [ ] Bug register (`docflow_bug` tool)
 - [ ] Patch tracking (`docflow_patch` tool)
-- [ ] Spikes (optional, like claude-kanban)
+- [ ] Spikes (optional)
 - [ ] Tests + documentation
 
 ---
@@ -510,22 +510,22 @@ traces_to:
 
 ### Why Tools + Events, Not Hooks
 
-Claude Code hooks fire at the OS/process level (even if Claude crashes). Pi events fire at the API level (when Claude is running). Trade-off:
+Pi coding agent hooks fire at the OS/process level (even if Pi coding agent crashes). Pi events fire at the API level (when Pi coding agent is running). Trade-off:
 
-| | Hooks (claude-kanban) | Events + Tools (docflow) |
+| | Hooks (original kanban) | Events + Tools (docflow) |
 |---|---|---|
 | Survives crash? | Yes (hooks are OS-level) | No — Pi needs to be running |
-| Survives Claude refusing? | Yes | No — Pi needs to be running |
-| Survives Claude context compaction? | Yes (event log persists) | No |
+| Survives Pi coding agent refusing? | Yes | No — Pi needs to be running |
+| Survives Pi coding agent context compaction? | Yes (event log persists) | No |
 | Real-time updates? | Needs reconciler (10s lag) | Immediate (synchronous) |
 | Platform | macOS only (launchd) | Cross-platform (pi runs anywhere) |
 | Complexity | Shell scripts + TypeScript reconciler | Pure TypeScript in one file |
 | Fork/branch persistence | No | Yes (tool details are fork-safe) |
 
 **Mitigations for the trade-off:**
-- `tool_call` interception can detect when Claude writes files, even if it doesn't call our tools
+- `tool_call` interception can detect when Pi coding agent writes files, even if it doesn't call our tools
 - `before_agent_start` runs for every new agent cycle, so the briefing always loads
-- The briefing tells Claude to call our tools proactively — most coverage comes from the skill, not the events
+- The briefing tells Pi coding agent to call our tools proactively — most coverage comes from the skill, not the events
 - For crash recovery: if Pi restarts, `session_start` fires and creates a fresh session card
 
 ### Why Not a Background Reconciler
@@ -549,7 +549,7 @@ Since pi doesn't have `SessionEnd` hooks:
 - `context` → update `lastActivity` every LLM call
 - `agent_end` → record activity, update status
 - `session_shutdown` → mark as ended
-- **Gap handling**: If Pi is running and Claude stops, the session stays "active" until Pi restarts. On restart, old sessions get aged. This is acceptable since the user would notice Pi was down.
+- **Gap handling**: If Pi is running and Pi coding agent stops, the session stays "active" until Pi restarts. On restart, old sessions get aged. This is acceptable since the user would notice Pi was down.
 
 ---
 

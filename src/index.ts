@@ -2,7 +2,7 @@
  * docflow — Document-driven kanban for Pi
  *
  * Combines document-first-wf's document generation & linking
- * with claude-kanban's session tracking & kanban boards.
+ * with session tracking & kanban boards.
  * No phase gates, no ceremony. Lightweight and automatic.
  */
 

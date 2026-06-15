@@ -23,7 +23,7 @@ export function registerDocflowRead(pi: ExtensionAPI, config: DocflowConfig, get
     }),
     promptSnippet: "Read a project document (plan, design, tasks, decisions, context)",
     promptGuidelines: [
-      "Use docflow_read when Claude needs to reference a project document.",
+      "Use docflow_read when the agent needs to reference a project document.",
       "Always read _Context.md first to get project overview.",
       "Read Plan.md and Design.md at the start of work to understand scope and architecture.",
     ],
