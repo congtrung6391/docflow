@@ -4,7 +4,7 @@ import { resolveProject, nowISO, readDoc } from "./utils";
 import { regenerateContextIndex, regenerateMasterIndex } from "./briefing";
 import { updateSessionInMarkdown, createSessionCard } from "./session";
 
-export interface EventsState {
+export interface DocflowState {
   config: DocflowConfig;
   currentProject: string | null;
   currentSessionCard: SessionCard | null;
@@ -19,7 +19,7 @@ function minutesAgo(dateStr: string): number {
   return Math.max(0, Math.floor(diff / 60000));
 }
 
-export function registerDocflowEvents(state: EventsState, pi: ExtensionAPI): void {
+export function registerDocflowEvents(state: DocflowState, pi: ExtensionAPI): void {
   // ──────────────────────────────────────────────────────────────────────
   // Event: session_start
   // ──────────────────────────────────────────────────────────────────────

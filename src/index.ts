@@ -9,22 +9,22 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerDocflowRead, registerDocflowWrite, registerDocflowTask, registerDocflowSession, registerDocflowContext } from "./tools";
 import { registerDocflowCommands, CommandState } from "./commands";
-import { registerDocflowEvents } from "./events";
+import { registerDocflowEvents, DocflowState } from "./events";
 import { registerDiagramTools } from "./diagrams";
-import { loadConfig, saveConfig, nowISO, ensureProjectDocs } from "./utils";
-import { regenerateContextIndex, regenerateMasterIndex } from "./briefing";
+import { loadConfig, saveConfig, nowISO, ensureProjectDocs, getProjectPath, regenerateContextIndex, regenerateMasterIndex } from "./utils";
 import type { DocflowConfig, SessionCard } from "./types";
 
 export default function docflowExtension(pi: ExtensionAPI): void {
   const config: DocflowConfig = loadConfig();
 
   // ──────────────────────────────────────────────────────────────────────
-  // Shared State (wrapped for mutability across modules)
+  // Shared mutable state — passed by reference to all modules
   // ──────────────────────────────────────────────────────────────────────
 
-  const state = {
-    currentProject: null as string | null,
-    currentSessionCard: null as SessionCard | null,
+  const state: DocflowState = {
+    config,
+    currentProject: null,
+    currentSessionCard: null,
     lastCwd: process.cwd(),
   };
 
@@ -49,9 +49,6 @@ export default function docflowExtension(pi: ExtensionAPI): void {
     regenerateMasterIndex(config);
   };
 
-  const resolveProjectPath = (slug: string, relativePath: string): string | null =>
-    getProjectPath(config, slug, relativePath);
-
   // ──────────────────────────────────────────────────────────────────────
   // Register Tools
   // ──────────────────────────────────────────────────────────────────────
@@ -66,7 +63,11 @@ export default function docflowExtension(pi: ExtensionAPI): void {
   // Register Diagram Tools
   // ──────────────────────────────────────────────────────────────────────
 
-  registerDiagramTools(pi, resolveProjectPath, getProject);
+  registerDiagramTools(
+    pi,
+    (slug: string, relativePath: string) => getProjectPath(config, slug, relativePath),
+    getProject
+  );
 
   // ──────────────────────────────────────────────────────────────────────
   // Register Commands
@@ -74,7 +75,7 @@ export default function docflowExtension(pi: ExtensionAPI): void {
 
   registerDocflowCommands(
     {
-      config,
+      get config() { return config; },
       get currentProject() { return state.currentProject; },
       get lastCwd() { return state.lastCwd; },
       set currentProject(val) { state.currentProject = val; },
@@ -90,13 +91,5 @@ export default function docflowExtension(pi: ExtensionAPI): void {
   // Register Events
   // ──────────────────────────────────────────────────────────────────────
 
-  registerDocflowEvents(
-    {
-      config,
-      get currentProject() { return state.currentProject; },
-      get currentSessionCard() { return state.currentSessionCard; },
-      ensureProject,
-    } as any,
-    pi
-  );
+  registerDocflowEvents(state, pi);
 }
