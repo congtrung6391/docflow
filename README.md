@@ -17,7 +17,7 @@ A lightweight, automatic task and session tracker that lives alongside your Obsi
 ## Install
 
 ```bash
-git clone https://github.com/<you>/obsidian-plugin.git ~/.pi/agent/extensions/docflow
+git clone https://github.com/congtrung6391/docflow.git ~/.pi/agent/extensions/docflow
 ```
 
 Then restart Pi — the extension will be discovered automatically.
