@@ -14,6 +14,14 @@ A lightweight, automatic task and session tracker that lives alongside your Obsi
 - **Shared vault** — all project docs live in one Obsidian vault, not scattered across repos
 - **Diagram generation** — Excalidraw and Mermaid diagrams generated automatically from natural language
 
+## Install
+
+```bash
+git clone https://github.com/<you>/obsidian-plugin.git ~/.pi/agent/extensions/docflow
+```
+
+Then restart Pi — the extension will be discovered automatically.
+
 ## Quick Start
 
 ```
