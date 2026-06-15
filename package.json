@@ -1,0 +1,22 @@
+{
+  "name": "docflow",
+  "version": "0.2.0",
+  "description": "Document-driven kanban for Pi — lightweight project tracking with auto-briefing and diagram support",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "typebox": "^0.34.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*"
+  },
+  "pi": {
+    "extensions": ["./dist"],
+    "skills": ["./skills"]
+  }
+}
