@@ -16,7 +16,7 @@
     "@earendil-works/pi-ai": "*"
   },
   "pi": {
-    "extensions": ["./dist"],
+    "extensions": ["./index.ts"],
     "skills": ["./skills"]
   }
 }

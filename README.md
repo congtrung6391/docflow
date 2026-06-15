@@ -17,10 +17,10 @@ A lightweight, automatic task and session tracker that lives alongside your Obsi
 ## Install
 
 ```bash
-git clone https://github.com/congtrung6391/docflow.git ~/.pi/agent/extensions/docflow
+git clone git@github.com:congtrung6391/docflow.git ~/.pi/agent/extensions/docflow
 ```
 
-Then restart Pi — the extension will be discovered automatically.
+Then run `/reload` in Pi — the extension will be discovered automatically at `~/.pi/agent/extensions/docflow/index.ts`.
 
 ## Quick Start
 
