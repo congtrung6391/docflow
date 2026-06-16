@@ -136,12 +136,12 @@ Describe the diagram in plain English; the tool emits valid Excalidraw JSON.
   color to group, not to decorate.
 - **Arrows**: reference elements by `label`; optional `label`, `strokeColor`,
   `strokeStyle` (solid/dashed/dotted). Labels sit on the line, clear of boxes.
-- **Routing** (`routing`): default `elbow` (native Excalidraw — arrows
-  auto-reroute as you drag boxes; best for frame-less diagrams). Diagrams with
-  frames automatically fall back to `orthogonal` (clean Manhattan lines that
-  fan across box borders and route around the box field). Use `straight` for
-  simple direct lines. You rarely need to set this — but routing never rescues a
-  diagram that simply has too many arrows.
+- **Routing** (`routing`): the default gives elbow-style arrows — clean
+  orthogonal (Manhattan) routes with rounded corners, every arrow bound to both
+  box edges so it always points at a real box and never floats. They fan across
+  borders and route around the box field. Use `straight` for simple direct
+  lines. You rarely need to set this — and routing never rescues a diagram that
+  simply has too many arrows.
 
 ## draw_mermaid mechanics
 
