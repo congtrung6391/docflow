@@ -943,10 +943,11 @@ function createBoundArrow(
     fillStyle: "solid",
     strokeWidth: 2,
     strokeStyle: style.strokeStyle || "solid",
-    // Crisp connectors: the hand-drawn wobble (roughness 1) made long arrows
-    // hard to trace. Boxes keep their sketch feel; arrows read clean.
+    // Crisp connectors: roughness 0 kills the hand-drawn wobble; roundness null
+    // gives sharp 90° corners instead of curly rounded bends, so elbows read as
+    // clean Manhattan lines. Boxes keep their sketch feel; arrows read clean.
     roughness: 0,
-    roundness: midPoints.length > 0 ? { type: 2 } : null,
+    roundness: null,
     startArrowhead: null,
     endArrowhead: "arrow",
     startBinding: { elementId: fromId, focus: style.startFocus ?? 0, gap },
