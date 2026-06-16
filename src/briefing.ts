@@ -1,8 +1,8 @@
 import { writeFileSync, readdirSync, existsSync } from "node:fs";
-import { join, dirname, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import type { DocflowConfig } from "./types";
-import { generateKanbanMarkdown, parseKanbanColumns, getNextTaskId } from "./kanban";
-import { getProjectPath, safeRead, nowISO, ensureDir, readDoc, writeDoc } from "./utils";
+import { generateKanbanMarkdown } from "./kanban";
+import { getProjectPath, safeRead, nowISO, ensureDir, writeDoc } from "./utils";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Briefing & Context

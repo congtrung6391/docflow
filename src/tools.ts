@@ -2,10 +2,10 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { DocflowConfig, SessionCard } from "./types";
-import { readDoc, writeDoc, appendDoc, shortenId, minutesAgo } from "./utils";
+import { readDoc, appendDoc, shortenId, minutesAgo } from "./utils";
 import { parseKanbanColumns, getNextTaskId, rebuildKanban } from "./kanban";
-import { updateSessionInMarkdown, createSessionCard } from "./session";
-import { generateBriefing, regenerateContextIndex, regenerateMasterIndex, ensureProjectDocs } from "./briefing";
+import { updateSessionInMarkdown } from "./session";
+import { generateBriefing, regenerateContextIndex, regenerateMasterIndex } from "./briefing";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Tool: docflow_read

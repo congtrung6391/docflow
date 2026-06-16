@@ -2,7 +2,6 @@ import { writeFileSync, existsSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { DocflowConfig } from "./types";
 import { readDoc, getProjectPath, nowISO } from "./utils";
-import { regenerateContextIndex, regenerateMasterIndex } from "./briefing";
 import { generateBriefing } from "./briefing";
 
 export interface CommandState {

@@ -9,7 +9,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
-import { dirname, basename, resolve } from "node:path";
+import { dirname, basename } from "node:path";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Excalidraw element types (simplified for AI)
