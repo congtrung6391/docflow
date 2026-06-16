@@ -1659,6 +1659,44 @@ function renderMermaidBlock(block: MermaidBlock, title: string): string {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Readability heuristics
+// ────────────────────────────────────────────────────────────────────────────
+
+// Surface cleanliness problems in the tool result so the agent gets feedback
+// in-loop — the skill guidance is easy to skip, but a tool result is not. These
+// are non-blocking nudges (the diagram is still created); the agent decides
+// whether to redraw. Mirrors the "fewer arrows" rules in the diagrams skill.
+function assessDiagramDensity(elements: PlanElement[], arrows: PlanArrow[]): string[] {
+  const nBoxes = elements.filter((e) => e.type !== "frame").length;
+  const nArrows = arrows.length;
+  const warnings: string[] = [];
+
+  if (nArrows > nBoxes && nArrows > 6) {
+    warnings.push(
+      `${nArrows} arrows for ${nBoxes} boxes — too dense to read. Clean diagrams keep arrows ≤ boxes. ` +
+        `Group related boxes into a 'frame', drop relationships that grouping/order already implies, ` +
+        `or split into smaller scoped diagrams (e.g. C4 context/container/component).`,
+    );
+  }
+
+  const degree = new Map<string, number>();
+  for (const a of arrows) {
+    degree.set(a.from, (degree.get(a.from) || 0) + 1);
+    degree.set(a.to, (degree.get(a.to) || 0) + 1);
+  }
+  const hubs = [...degree.entries()].filter(([, d]) => d > 5).map(([l]) => l);
+  if (hubs.length) {
+    warnings.push(`Hairball box(es) with >5 connections: ${hubs.join(", ")}. Add a grouping frame or split the diagram.`);
+  }
+
+  const directed = new Set(arrows.map((a) => `${a.from} ${a.to}`));
+  const bidi = arrows.filter((a) => a.from < a.to && directed.has(`${a.to} ${a.from}`)).length;
+  if (bidi) warnings.push(`${bidi} bidirectional arrow pair(s) — keep one arrow in the dominant direction.`);
+
+  return warnings;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Extension Registration
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -1688,7 +1726,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
     name: "draw_excalidraw",
     label: "draw_excalidraw",
     description:
-      "Create or update a free-form Excalidraw diagram (architecture, wireframes, sketches). Describe boxes and arrows in plain English — the tool auto-lays-out the nodes, binds arrows to box edges, and centres labels inside boxes. Use draw_mermaid for standard diagrams (sequence, flowchart, state).",
+      "Create or update a free-form Excalidraw diagram (architecture/C4, wireframes, screenflow, brainstorm, data-flow). Describe boxes and arrows in plain English; the tool auto-lays-out nodes and binds arrows to box edges. CLEAN DIAGRAMS USE FEW ARROWS: aim for arrows ≤ number of boxes — show relationships with frames/grouping/layout instead of lines, and split a busy diagram by scope (e.g. C4 levels) rather than cramming. The tool warns when a diagram is too dense; act on the warning. Use draw_mermaid for strict standard diagrams (sequence, flowchart, state, ER, class, gantt).",
     parameters: Type.Object({
       project: Type.Optional(Type.String()),
       filePath: Type.Optional(Type.String()),
@@ -1764,11 +1802,19 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
         writeFileSync(filePath.replace(/\.(json|excalidraw)$/, ".excalidraw.md"), buildObsidianExcalidrawMarkdown(sceneJson, planned.texts), "utf-8");
       }
 
+      const warnings = assessDiagramDensity(
+        (params.elements as PlanElement[] | undefined) || [],
+        (params.arrows as PlanArrow[] | undefined) || [],
+      );
+      const warnBlock = warnings.length
+        ? `⚠ Readability — this diagram is hard to read; redraw cleaner:\n${warnings.map((w) => `  • ${w}`).join("\n")}\n\n`
+        : "";
+
       return {
         content: [
           {
             type: "text",
-            text: `✓ Diagram created: ${basename(filePath)}\n  Elements: ${planned.elementCount}  Layout: ${planned.direction}${routingNote}\n  File: ${filePath}`,
+            text: `${warnBlock}✓ Diagram created: ${basename(filePath)}\n  Elements: ${planned.elementCount}  Layout: ${planned.direction}${routingNote}\n  File: ${filePath}`,
           },
         ],
         details: {
@@ -1778,6 +1824,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
           elementCount: planned.elementCount,
           direction: planned.direction,
           routing: planned.routing,
+          warnings,
         },
       };
     },
