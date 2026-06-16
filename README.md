@@ -1,4 +1,4 @@
-# docflow — Document-Driven Kanban for Pi
+# docflow — Document-Driven for Pi
 
 A lightweight, automatic task and session tracker that lives alongside your Obsidian vault. It gives you kanban boards, session tracking, decision logging, and AI-generated diagrams — all updated in real-time as you work.
 
