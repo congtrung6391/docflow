@@ -1203,12 +1203,15 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
   //      crisp perpendicular elbow. No pile-ups at box centres, no diagonals.
   const arrowEls: El[] = [];
   const arrowLabelEls: El[] = [];
-  // "elbow" lets Excalidraw natively auto-route + re-flow on edit, but it's
-  // broken inside frames in the Obsidian plugin (#2187), so fall back to our
-  // own orthogonal router whenever frames are present.
-  const emitElbow = input.routing === "elbow" && !hasFrames;
-  const routingUsed: Routing = input.routing === "elbow" && hasFrames ? "orthogonal" : input.routing || "orthogonal";
+  // "elbow" = native Excalidraw arrows that auto-reroute on edit. The Obsidian
+  // bug (#2187) only breaks elbow arrows whose endpoints share a frame, so the
+  // fallback to our orthogonal router is PER-ARROW: same-frame arrows fall back,
+  // cross-frame and frame-less arrows get native elbow.
+  const wantElbow = input.routing === "elbow";
+  const routingUsed: Routing = input.routing || "orthogonal";
   const useOrthogonal = routingUsed !== "straight";
+  const frameByLabel = new Map(nodeInputs.map((e) => [e.label, e.frame]));
+  let elbowCount = 0;
 
   type ArrowPlan = {
     a: PlanArrow;
@@ -1223,6 +1226,7 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
     laneIdx: number;
     startT: number;
     endT: number;
+    elbow: boolean;
   };
 
   // Bounding box of the whole drawing — margin trunk lanes sit just outside it.
@@ -1251,10 +1255,17 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
     const ti = nodeIndexByLabel.get(a.to);
     const waypoints: Pt[] = (fi !== undefined && ti !== undefined && edgeRoutes.get(edgeKey(fi, ti))) || [];
 
-    // A framed edge with no reserved lane that would cross other boxes → trunk.
+    // Native elbow unless both endpoints live in the same frame (Obsidian #2187).
+    const frameA = frameByLabel.get(a.from);
+    const frameB = frameByLabel.get(a.to);
+    const elbow = wantElbow && !(frameA && frameA === frameB);
+    if (elbow) elbowCount++;
+
+    // A framed edge our router draws that would cross other boxes → margin trunk.
+    // (Elbow arrows route themselves, so they never need a trunk.)
     const isEndpoint = (b: Bounds) => (b.x === fromBounds.x && b.y === fromBounds.y) || (b.x === toBounds.x && b.y === toBounds.y);
     const others = allBounds.filter((b) => !isEndpoint(b));
-    const wantsChannel = hasFrames && useOrthogonal && waypoints.length === 0 && hasIntermediateBox(fromBounds, toBounds, others, direction);
+    const wantsChannel = !elbow && hasFrames && useOrthogonal && waypoints.length === 0 && hasIntermediateBox(fromBounds, toBounds, others, direction);
 
     // Channel edges still exit/enter perpendicular to the flow (forward sides);
     // only the middle of the route detours to the margin. The trunk runs along
@@ -1272,7 +1283,7 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
       }
     }
 
-    const plan: ArrowPlan = { a, from, to, fromBounds, toBounds, fromSide, toSide, waypoints, channel, laneIdx: 0, startT: 0.5, endT: 0.5 };
+    const plan: ArrowPlan = { a, from, to, fromBounds, toBounds, fromSide, toSide, waypoints, channel, laneIdx: 0, startT: 0.5, endT: 0.5, elbow };
     plans.push(plan);
 
     const register = (boxId: string, side: Side, end: "start" | "end", otherCenter: Pt) => {
@@ -1315,12 +1326,12 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
   };
 
   for (const plan of plans) {
-    const { a, from, to, fromBounds, toBounds, fromSide, toSide, waypoints, channel } = plan;
+    const { a, from, to, fromBounds, toBounds, fromSide, toSide, waypoints, channel, elbow } = plan;
     const start = portPoint(fromBounds, fromSide, plan.startT);
     const end = portPoint(toBounds, toSide, plan.endT);
     // Elbow arrows store just the two endpoints — Excalidraw computes (and keeps
     // re-computing) the bends itself. Everything else stores an explicit route.
-    const route = emitElbow
+    const route = elbow
       ? [start, end]
       : channel
         ? sideChannelRoute(start, end, channelCross(channel, plan.laneIdx), direction)
@@ -1334,7 +1345,7 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
       strokeStyle: a.strokeStyle,
       startFocus: focusFromT(plan.startT),
       endFocus: focusFromT(plan.endT),
-      ...(emitElbow
+      ...(elbow
         ? { elbowed: true, startFixedPoint: fixedPointFor(fromSide, plan.startT), endFixedPoint: fixedPointFor(toSide, plan.endT) }
         : {}),
     });
@@ -1375,7 +1386,9 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
     texts,
     elementCount: ordered.length,
     direction: nodeInputs.length === 0 ? "none" : direction,
-    routing: routingUsed,
+    // Report "elbow" only if at least one elbow arrow was actually emitted;
+    // a diagram whose every arrow is same-frame degrades to orthogonal.
+    routing: wantElbow && elbowCount === 0 ? "orthogonal" : routingUsed,
   };
 }
 
@@ -1784,9 +1797,9 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
       const elbowFellBack = params.routing === "elbow" && planned.routing !== "elbow";
       const routingNote =
         planned.routing === "elbow"
-          ? "\n  Arrows: native elbow (auto-reroute on edit)"
+          ? "\n  Arrows: native elbow (auto-reroute on edit; same-frame arrows use orthogonal)"
           : elbowFellBack
-            ? "\n  Arrows: orthogonal (elbow unavailable — diagram has frames, Obsidian #2187)"
+            ? "\n  Arrows: orthogonal (every arrow is inside one frame — elbow breaks there, Obsidian #2187)"
             : "";
 
       const sceneJson = buildSceneJson(planned.scene);
