@@ -916,18 +916,11 @@ function createText(
   };
 }
 
-// Normalised [horizontal, vertical] ratio (0..1) of a port on a box — the
-// `fixedPoint` an elbow arrow's binding anchors to. Avoids exactly 0.5, which
-// trips Excalidraw's fixedPoint precision handling.
-function fixedPointFor(side: Side, t: number): [number, number] {
-  const v = Math.abs(t - 0.5) < 1e-6 ? 0.5001 : t;
-  switch (side) {
-    case "top": return [v, 0];
-    case "bottom": return [v, 1];
-    case "left": return [0, v];
-    case "right": return [1, v];
-  }
-}
+// Centre fixedPoint for elbow bindings (avoids exactly 0.5, which trips
+// Excalidraw's precision handling). Orbiting the centre — rather than pinning a
+// specific edge point — lets Excalidraw choose the attachment side and re-route
+// the arrow automatically as boxes move.
+const ELBOW_CENTER: [number, number] = [0.5001, 0.5001];
 
 function createBoundArrow(
   start: { x: number; y: number },
@@ -942,11 +935,7 @@ function createBoundArrow(
     startFocus?: number;
     endFocus?: number;
     // When set, this is a real Excalidraw ELBOW arrow (the 3rd "Arrow type").
-    // `fixedPoint` anchors each end to a box edge; we keep the full routed path
-    // in `points` and omit `mode` so Excalidraw's own restore fills it in.
     elbowed?: boolean;
-    startFixedPoint?: [number, number];
-    endFixedPoint?: [number, number];
   }
 ): El {
   const gap = style.gap ?? 3;
@@ -957,15 +946,16 @@ function createBoundArrow(
   ];
   const elbowed = !!style.elbowed;
   // Match the EXACT binding shape the Obsidian Excalidraw plugin (v2.23.x) emits
-  // for elbow arrows: { elementId, mode:"orbit", fixedPoint } — no focus/gap, and
+  // for elbow arrows: { elementId, mode:"orbit", fixedPoint }. We orbit the box
+  // CENTRE so the arrow just "connects the box" and Excalidraw auto-picks the
+  // side/direction (instead of sticking to a fixed edge point). No focus/gap and
   // NO fixedSegments/startIsSpecial/endIsSpecial (absent in this version; emitting
-  // them made restore reject the elbow and fall back to a sharp arrow). Non-elbow
-  // arrows keep the standard { elementId, focus, gap } binding.
+  // them made restore reject the elbow). Non-elbow arrows keep { elementId, focus, gap }.
   const startBinding: Record<string, unknown> = elbowed
-    ? { elementId: fromId, mode: "orbit", fixedPoint: style.startFixedPoint }
+    ? { elementId: fromId, mode: "orbit", fixedPoint: ELBOW_CENTER }
     : { elementId: fromId, focus: style.startFocus ?? 0, gap };
   const endBinding: Record<string, unknown> = elbowed
-    ? { elementId: toId, mode: "orbit", fixedPoint: style.endFixedPoint }
+    ? { elementId: toId, mode: "orbit", fixedPoint: ELBOW_CENTER }
     : { elementId: toId, focus: style.endFocus ?? 0, gap };
   return {
     id: genId(),
@@ -1339,9 +1329,7 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
       strokeStyle: a.strokeStyle,
       startFocus: focusFromT(plan.startT),
       endFocus: focusFromT(plan.endT),
-      ...(elbow
-        ? { elbowed: true, startFixedPoint: fixedPointFor(fromSide, plan.startT), endFixedPoint: fixedPointFor(toSide, plan.endT) }
-        : {}),
+      ...(elbow ? { elbowed: true } : {}),
     });
     (from.boundElements as Array<Record<string, unknown>>).push({ id: arrow.id, type: "arrow" });
     (to.boundElements as Array<Record<string, unknown>>).push({ id: arrow.id, type: "arrow" });
@@ -1676,11 +1664,13 @@ function assessDiagramDensity(elements: PlanElement[], arrows: PlanArrow[]): str
   const nArrows = arrows.length;
   const warnings: string[] = [];
 
-  if (nArrows > nBoxes && nArrows > 6) {
+  // Only flag GENUINE arrow-soup (roughly 2× more arrows than boxes, and a lot
+  // of them). Don't nag at moderate counts — under-drawing is the worse failure.
+  if (nArrows > nBoxes * 2 && nArrows > 18) {
     warnings.push(
-      `${nArrows} arrows for ${nBoxes} boxes — too dense to read. Clean diagrams keep arrows ≤ boxes. ` +
-        `Group related boxes into a 'frame', drop relationships that grouping/order already implies, ` +
-        `or split into smaller scoped diagrams (e.g. C4 context/container/component).`,
+      `${nArrows} arrows for ${nBoxes} boxes — likely arrow-soup. Drop only REDUNDANT arrows ` +
+        `(already implied by a 'frame', by order, or by transitivity), or split into smaller scoped ` +
+        `diagrams (e.g. C4 context/container/component). Keep every essential connection.`,
     );
   }
 
@@ -1731,7 +1721,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
     name: "draw_excalidraw",
     label: "draw_excalidraw",
     description:
-      "Create or update a free-form Excalidraw diagram (architecture/C4, wireframes, screenflow, brainstorm, data-flow). Describe boxes and arrows in plain English; the tool auto-lays-out nodes and binds arrows to box edges. CLEAN DIAGRAMS USE FEW ARROWS: aim for arrows ≤ number of boxes — show relationships with frames/grouping/layout instead of lines, and split a busy diagram by scope (e.g. C4 levels) rather than cramming. The tool warns when a diagram is too dense; act on the warning. Use draw_mermaid for strict standard diagrams (sequence, flowchart, state, ER, class, gantt).",
+      "Create or update a free-form Excalidraw diagram (architecture/C4, wireframes, screenflow, brainstorm, data-flow). Describe boxes and arrows in plain English; the tool auto-lays-out nodes and binds arrows to box edges (real elbow arrows). Show EVERY essential relationship — a diagram that omits how the pieces connect teaches nothing; drop only REDUNDANT arrows (implied by a frame, by order, or by transitivity). If essential arrows are genuinely many, split by scope (C4 levels) rather than omit them. Use draw_mermaid for strict standard diagrams (sequence, flowchart, state, ER, class, gantt).",
     parameters: Type.Object({
       project: Type.Optional(Type.String()),
       filePath: Type.Optional(Type.String()),
@@ -1765,9 +1755,9 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
     promptSnippet: "Create an Excalidraw diagram",
     promptGuidelines: [
       "Use draw_excalidraw for spatial/creative diagrams: C4/architecture, UI wireframes, screenflow, brainstorm, data-flow, scrum boards.",
-      "FEWER ARROWS = CLEARER. Budget arrows ≤ number of boxes; a diagram with >15-20 arrows is unreadable — split it by scope (e.g. C4 levels) instead. See the 'diagrams' skill for per-type playbooks.",
-      "Express relationships WITHOUT arrows where possible: put related boxes in a 'frame' (containment), or rely on column/row order (a pipeline). Only draw an arrow for a relationship that proximity/grouping can't show.",
-      "Keep one flow direction; avoid back-edges, bidirectional pairs, and high fan-out (a box with >4 arrows is a hairball — group or split).",
+      "Show EVERY essential relationship — if two things call/flow/depend and the reader needs it, draw the arrow. Under-drawing (boxes with no connections, or hiding how pieces interact) makes a diagram useless. The goal is every essential arrow, no redundant ones.",
+      "Drop only REDUNDANT arrows: ones already implied by a 'frame' (containment), by row/column order (a pipeline), or by transitivity (skip A→C if A→B→C is shown and A doesn't call C directly). Never drop a connection the reader would have to guess.",
+      "If essential arrows are genuinely many, split by scope (e.g. C4 context/container/component) rather than omit connections. Prefer one flow direction; turn bidirectional pairs/back-edges into a single directed arrow.",
       "Omit x/y — nodes auto-lay-out from the arrows; arrows bind to box edges. Leave direction 'auto' unless forcing 'LR'/'TB'. Label only non-obvious arrows.",
       "Routing default is 'elbow' (real Excalidraw elbow arrows — right-angle, auto-routing, bound to both box edges so they never float). Pass 'straight' for simple direct lines.",
       "Use draw_mermaid for strict standard types (sequence, flowchart, state, gantt, class, ER) — it auto-lays-out and prevents arrow soup.",

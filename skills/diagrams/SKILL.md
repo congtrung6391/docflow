@@ -5,28 +5,35 @@ description: Draw clean diagrams for project docs — architecture/C4, ER, state
 
 # Drawing clean diagrams
 
-A good diagram answers **one** question and can be read in seconds. The single
-biggest cause of unreadable diagrams is **too many arrows** — and no amount of
-auto-routing fixes that. Treat arrows as a scarce, expensive resource. Most of
-this skill is about *not* drawing them.
+A good diagram answers **one** question and can be read in seconds. Arrows carry
+the meaning — they show how things connect, call, flow, or depend. **Draw every
+relationship the reader needs to understand the system.** A diagram that omits
+real connections is just as useless as one buried in arrow-soup — and *more*
+common once you start trimming. The goal is not "few arrows," it is "every
+*essential* arrow, no *redundant* ones." Cut only what grouping or order already
+makes obvious; never cut a connection the reader would otherwise have to guess.
 
 ## The 10 rules of a clean diagram (read first)
 
-1. **One diagram, one question, one scope.** If you're tempted to show
-   everything, split into several diagrams instead (this is the whole idea
-   behind C4 levels).
-2. **Arrow budget: aim for arrows ≤ number of boxes.** Past ~15–20 arrows a
-   diagram is almost always unreadable — that's a signal to split by scope, not
-   to route harder.
-3. **Prefer structure over arrows.** Three ways to show a relationship *without*
-   a line:
-   - **Containment** — put boxes in a `frame`. A box inside "Auth Service" needs
-     no arrow to say it belongs there.
-   - **Order / proximity** — a column or row reads as a pipeline; you don't need
-     an arrow between every adjacent step.
-   - **Color / grouping** — same color = same concern.
-4. **Only draw an arrow for a relationship grouping can't express** — a real
-   call, dependency, transition, or data flow that matters to the question.
+1. **Show every essential relationship.** If two things talk, call, flow, or
+   depend on each other and the reader needs to know, draw the arrow. Under-
+   drawing is a real failure: a box with no connections, or a diagram that
+   doesn't show how the pieces interact, teaches nothing.
+2. **One diagram, one question, one scope.** If you're tempted to show
+   *everything at every level*, split into several diagrams (this is the whole
+   idea behind C4 levels) — don't drop essential arrows to fit one canvas.
+3. **Cut only REDUNDANT arrows, not essential ones.** Drop an arrow only when
+   grouping or order already conveys it:
+   - **Containment** — a box inside an "Auth Service" `frame` needs no arrow to
+     say it *belongs* there (but still draw arrows for what it *calls*).
+   - **Order / proximity** — adjacent steps in a pipeline imply sequence; you
+     needn't connect every pair if the flow is linear and obvious.
+   - **Transitivity** — if A→B→C is shown, skip a redundant A→C unless A really
+     calls C directly.
+4. **Watch the extremes, not a hard cap.** Roughly, far more arrows than boxes
+   usually means redundant/derivable links (or wrong diagram type); far fewer
+   means you're under-drawing. Aim for "every essential connection shown" — if
+   that genuinely needs many arrows, split by scope rather than omit.
 5. **One primary direction** (top→down or left→right). Avoid back-edges and
    cross-links; they create the crossings that make diagrams ugly.
 6. **No bidirectional pairs.** One arrow, the dominant direction. Two-way is noise.
@@ -151,16 +158,20 @@ it. Prefer this for the strict types above.
 
 ## Before you finish — cleanliness checklist
 
-- [ ] Could any arrow be replaced by putting boxes in a frame, or by order? Do it.
-- [ ] Arrows ≤ boxes? If not, split the diagram by scope/level.
-- [ ] Any box with >4 arrows, any bidirectional pair, any back-edge? Fix it.
-- [ ] Do all arrows flow one direction?
-- [ ] Is every arrow label necessary?
+- [ ] Is **every** essential relationship shown? Any box left unconnected that
+      shouldn't be? (Under-drawing is the most common failure — don't ship a
+      diagram that hides how the pieces interact.)
+- [ ] Any *redundant* arrows (already implied by a frame, by order, or by
+      transitivity)? Drop only those.
+- [ ] Any bidirectional pair or back-edge that should be one directed arrow? Fix it.
+- [ ] Do arrows mostly flow one direction?
+- [ ] If there are genuinely too many essential arrows, split by scope/level
+      (C4) rather than omit connections.
 - [ ] Is this the right *type* for the question, or am I forcing it?
 - [ ] Saved to `<slug>/diagrams/` and referenced from the relevant doc (`[[file]]`).
 
 ## Always
 
 - Use the tools — never hand-write Excalidraw JSON or Mermaid.
-- Start with the boxes and grouping; add arrows last, reluctantly.
+- Lay out boxes and grouping first, then draw all the relationships that matter.
 - When in doubt, draw two smaller diagrams instead of one busy one.
