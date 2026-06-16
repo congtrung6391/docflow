@@ -1207,16 +1207,14 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
   //      crisp perpendicular elbow. No pile-ups at box centres, no diagonals.
   const arrowEls: El[] = [];
   const arrowLabelEls: El[] = [];
-  // Default to real Excalidraw ELBOW arrows (3rd arrow type). We always compute
-  // our own orthogonal route for the points (so it reads right even before
-  // Excalidraw re-routes), bind both ends to box edges, and add `elbowed:true`.
-  // The Obsidian bug #2187 only breaks elbow arrows whose endpoints share a
-  // frame, so those stay non-elbow (still bound, still orthogonal). "straight"
-  // forces a plain direct line.
+  // Default to real Excalidraw ELBOW arrows (3rd arrow type) for EVERY arrow —
+  // cross-frame and same-frame alike (the old elbow-in-frame bug #2187 is fixed
+  // in current plugin versions). We compute our own orthogonal route for the
+  // points so it reads right even before Excalidraw re-routes, bind both ends to
+  // box edges, and set `elbowed:true`. "straight" forces a plain direct line.
   const wantElbow = input.routing !== "straight";
   const routingUsed: Routing = wantElbow ? "elbow" : "straight";
   const useOrthogonal = wantElbow; // we still compute orthogonal points for the elbow path
-  const frameByLabel = new Map(nodeInputs.map((e) => [e.label, e.frame]));
 
   type ArrowPlan = {
     a: PlanArrow;
@@ -1260,10 +1258,7 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
     const ti = nodeIndexByLabel.get(a.to);
     const waypoints: Pt[] = (fi !== undefined && ti !== undefined && edgeRoutes.get(edgeKey(fi, ti))) || [];
 
-    // Elbow type unless both endpoints share a frame (Obsidian #2187).
-    const frameA = frameByLabel.get(a.from);
-    const frameB = frameByLabel.get(a.to);
-    const elbow = wantElbow && !(frameA && frameA === frameB);
+    const elbow = wantElbow;
 
     // A framed edge that would cross other boxes → margin trunk.
     const isEndpoint = (b: Bounds) => (b.x === fromBounds.x && b.y === fromBounds.y) || (b.x === toBounds.x && b.y === toBounds.y);
@@ -1786,8 +1781,8 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
         arrows: params.arrows as PlanArrow[] | undefined,
         title: params.title,
         direction: (params.direction as Direction | "auto" | undefined) || "auto",
-        // Default to real Excalidraw elbow arrows (the 3rd "Arrow type"), bound
-        // to both box edges. Same-frame arrows stay non-elbow (Obsidian #2187).
+        // Default to real Excalidraw elbow arrows (the 3rd "Arrow type") for
+        // every arrow, bound to both box edges.
         routing: (params.routing as Routing | undefined) || "elbow",
       });
 
