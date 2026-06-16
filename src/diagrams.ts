@@ -1721,14 +1721,13 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
     }),
     promptSnippet: "Create an Excalidraw diagram",
     promptGuidelines: [
-      "Use draw_excalidraw for free-form diagrams: architecture, wireframes, sketches.",
-      "Omit x/y — the tool auto-lays-out nodes from the arrows (Sugiyama layered layout) and binds arrows to box edges. Only set x/y to override.",
-      "Leave direction as 'auto' (inferred from the graph) unless you want to force 'LR' or 'TB'.",
-      "Group related nodes by giving each element a 'frame' (the label of a frame element); the frame auto-sizes to wrap its members.",
-      "Reference elements in arrows by their label. Arrow labels are drawn on the line, clear of the boxes.",
-      "Leave routing as 'orthogonal' (default): arrows fan across box edges and bend through clear lanes so each is easy to trace. Pass 'straight' for simple direct diagonal lines.",
-      "Pass routing 'elbow' for native Excalidraw elbow arrows that auto-reroute as boxes move — best for diagrams WITHOUT frames. With frames it auto-falls back to 'orthogonal' (Obsidian elbow-in-frame bug).",
-      "Use draw_mermaid for structured diagrams: sequence, flowchart, state, gantt, class, ER.",
+      "Use draw_excalidraw for spatial/creative diagrams: C4/architecture, UI wireframes, screenflow, brainstorm, data-flow, scrum boards.",
+      "FEWER ARROWS = CLEARER. Budget arrows ≤ number of boxes; a diagram with >15-20 arrows is unreadable — split it by scope (e.g. C4 levels) instead. See the 'diagrams' skill for per-type playbooks.",
+      "Express relationships WITHOUT arrows where possible: put related boxes in a 'frame' (containment), or rely on column/row order (a pipeline). Only draw an arrow for a relationship that proximity/grouping can't show.",
+      "Keep one flow direction; avoid back-edges, bidirectional pairs, and high fan-out (a box with >4 arrows is a hairball — group or split).",
+      "Omit x/y — nodes auto-lay-out from the arrows; arrows bind to box edges. Leave direction 'auto' unless forcing 'LR'/'TB'. Label only non-obvious arrows.",
+      "Routing default is 'elbow' (native Excalidraw, auto-reroutes on edit); diagrams with frames auto-fall-back to 'orthogonal'. Pass 'straight' for simple direct lines.",
+      "Use draw_mermaid for strict standard types (sequence, flowchart, state, gantt, class, ER) — it auto-lays-out and prevents arrow soup.",
     ],
     async execute(_toolCallId, params) {
       const slug = params.project || getCurrentProject() || "_unassigned";
@@ -1739,7 +1738,9 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
         arrows: params.arrows as PlanArrow[] | undefined,
         title: params.title,
         direction: (params.direction as Direction | "auto" | undefined) || "auto",
-        routing: (params.routing as Routing | undefined) || "orthogonal",
+        // Default to native elbow arrows (auto-reroute on edit). Diagrams with
+        // frames transparently fall back to our orthogonal router (Obsidian #2187).
+        routing: (params.routing as Routing | undefined) || "elbow",
       });
 
       const elbowFellBack = params.routing === "elbow" && planned.routing !== "elbow";
