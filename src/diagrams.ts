@@ -943,14 +943,14 @@ function createBoundArrow(
     fillStyle: "solid",
     strokeWidth: 2,
     strokeStyle: style.strokeStyle || "solid",
-    // Elbow-connector look: clean Manhattan route (roughness 0) with gently
-    // ROUNDED corners (roundness type 2) — not sharp pointy corners. We bind
-    // every arrow to both endpoints below, so it always points at a real box
-    // edge and never floats. (We deliberately do NOT emit native `elbowed`
-    // arrows — they bind unreliably in the Obsidian plugin and end up pointing
-    // to nowhere; our bound orthogonal route gives the elbow look dependably.)
+    // Elbow connector: STRAIGHT orthogonal segments meeting at RIGHT ANGLES
+    // (roundness null = no curve; roughness 0 = no sketchy wobble). Every arrow
+    // is bound to both endpoints below, so it always meets a real box edge and
+    // never floats. (We deliberately do NOT emit native `elbowed` arrows — they
+    // bind unreliably in the Obsidian plugin and end up pointing to nowhere; a
+    // bound orthogonal route with right-angle corners is the dependable elbow.)
     roughness: 0,
-    roundness: { type: 2 },
+    roundness: null,
     startArrowhead: null,
     endArrowhead: "arrow",
     startBinding: { elementId: fromId, focus: style.startFocus ?? 0, gap },
