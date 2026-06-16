@@ -95,7 +95,7 @@ interface Project {
 
 | Mode | Location | Best for |
 |------|----------|----------|
-| `"vault"` (default) | `<vaultPath>/docflow/<slug>/` | Multi-repo projects, shared workspace |
+| `"vault"` (default) | `<vaultPath>/<slug>/` | Multi-repo projects, shared workspace |
 | `"repo"` | `<repo-root>/docflow/<slug>/` | Single-repo projects, docs version-controlled with code |
 
 Create with: `/docflow-project-new myproject "Name" repo` (appending `repo` switches to repo mode).
@@ -166,10 +166,10 @@ Documents live in **shared-vault** by default, but can be stored **in-repo** per
 
 **Shared-vault** (default, `docStorage: "vault"`):
 ```
-~/.pi/data/docflow/                        # Extension data
+~/.pi/data/                                # Extension data
   config.json                              # vaultPath, projects, worktree-map
 
-<vaultPath>/docflow/                       # Shared vault (rendered docs)
+<vaultPath>/                               # Shared vault (rendered docs)
   _Index.md                                # Master rollup
   <slug>/
     README.md           # User-authored
@@ -183,7 +183,7 @@ Documents live in **shared-vault** by default, but can be stored **in-repo** per
 
 **In-repo** (`docStorage: "repo"`):
 ```
-<repo-root>/docflow/                         # alongside code, version-controlled
+<repo-root>/                         # alongside code, version-controlled
   <slug>/
     README.md
     Plan.md

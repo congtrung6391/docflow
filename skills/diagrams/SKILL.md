@@ -119,7 +119,7 @@ Create a flowchart:
 3. **Use colors** to indicate importance or grouping
 4. **Group related items** with frames in Excalidraw
 5. **Keep labels short** — use one line per label when possible
-6. **Save to project diagrams directory** — tools write to `docflow/<slug>/diagrams/`
+6. **Save to project diagrams directory** — tools write to `<slug>/diagrams/`
 7. **Embed in docs** — reference diagrams from Plan.md, Design.md with `[[filename]]`
 
 ## Troubleshooting

@@ -522,7 +522,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
     ],
     async execute(_toolCallId, params) {
       const slug = params.project || "_unassigned";
-      const filePath = params.filePath || resolveProjectPath(slug, "docflow/<slug>/diagrams/_Sketch.md") || `${slug}/docflow/diagrams/_Sketch.md`;
+      const filePath = params.filePath || resolveProjectPath(slug, "/<slug>/diagrams/_Sketch.md") || `${slug}/diagrams/_Sketch.md`;
 
       // Parse elements
       const elements: Record<string, unknown>[] = [];
@@ -668,7 +668,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
     ],
     async execute(_toolCallId, params) {
       const slug = params.project || "_unassigned";
-      const filePath = params.filePath || resolveProjectPath(slug, "docflow/<slug>/diagrams/_Sketch.md") || `${slug}/docflow/diagrams/_Sketch.md`;
+      const filePath = params.filePath || resolveProjectPath(slug, "<slug>/diagrams/_Sketch.md") || `${slug}/diagrams/_Sketch.md`;
 
       const mermaidBlock = generateMermaidBlock(params.type, {
         nodes: params.nodes ?? "",
@@ -752,7 +752,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
     promptSnippet: "Check diagram status",
     async execute(_toolCallId, params) {
       const slug = params.project || "_unassigned";
-      const diagramsDir = params.filePath || resolveProjectPath(slug, "docflow/<slug>/diagrams/") || `${slug}/docflow/diagrams/`;
+      const diagramsDir = params.filePath || resolveProjectPath(slug, "<slug>/diagrams/") || `${slug}/diagrams/`;
 
       if (!existsSync(diagramsDir)) {
         return {
@@ -793,7 +793,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
     description: "Create an Excalidraw diagram for the current project",
     handler: async (args, ctx) => {
       const slug = getCurrentProject() || "_unassigned";
-      const dir = resolveProjectPath(slug, "docflow/<slug>/diagrams/") || `${slug}/docflow/diagrams/`;
+      const dir = resolveProjectPath(slug, "<slug>/diagrams/") || `${slug}/diagrams/`;
       ensureDir(dir);
       ctx.ui.notify(`📐 Diagram directory ready: ${basename(dir)}`, "info");
     },
@@ -803,7 +803,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
     description: "Create a Mermaid diagram for the current project",
     handler: async (args, ctx) => {
       const slug = getCurrentProject() || "_unassigned";
-      const dir = resolveProjectPath(slug, "docflow/<slug>/diagrams/") || `${slug}/docflow/diagrams/`;
+      const dir = resolveProjectPath(slug, "<slug>/diagrams/") || `${slug}/diagrams/`;
       ensureDir(dir);
       ctx.ui.notify(`📐 Diagram directory ready: ${basename(dir)}`, "info");
     },

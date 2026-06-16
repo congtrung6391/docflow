@@ -106,19 +106,19 @@ export function getProjectPath(config: DocflowConfig, slug: string, relativePath
 // ────────────────────────────────────────────────────────────────────────────
 
 export function readDoc(config: DocflowConfig, slug: string, docName: string): string | null {
-  const path = getProjectPath(config, slug, `docflow/<slug>/${docName}`);
+  const path = getProjectPath(config, slug, `<slug>/${docName}`);
   return path ? safeRead(path) : null;
 }
 
 export function writeDoc(config: DocflowConfig, slug: string, docName: string, content: string): void {
-  const path = getProjectPath(config, slug, `docflow/<slug>/${docName}`);
+  const path = getProjectPath(config, slug, `<slug>/${docName}`);
   if (!path) return;
   ensureDir(dirname(path));
   writeFileSync(path, content, "utf-8");
 }
 
 export function appendDoc(config: DocflowConfig, slug: string, docName: string, content: string): void {
-  const path = getProjectPath(config, slug, `docflow/<slug>/${docName}`);
+  const path = getProjectPath(config, slug, `<slug>/${docName}`);
   if (!path) return;
   ensureDir(dirname(path));
 

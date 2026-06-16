@@ -97,11 +97,11 @@ Documents are stored in **two modes**, configurable per-project (`vault` is the 
 **Vault mode** (`docStorage: "vault"`) — all project docs in a shared Obsidian vault:
 
 ```
-~/.pi/data/docflow/
+~/.pi/data/
   config.json
   projects.json
 
-<vaultPath>/docflow/
+<vaultPath>/
   _Index.md                  # Master rollup (hot/warm/cold)
   <slug>/
     README.md                # Project charter
@@ -117,10 +117,10 @@ Documents are stored in **two modes**, configurable per-project (`vault` is the 
       <name>-mermaid.md
 ```
 
-**Repo mode** (`docStorage: "repo"`) — docs stored in `<repo-root>/docflow/<slug>/` alongside the code:
+**Repo mode** (`docStorage: "repo"`) — docs stored in `<repo-root>/<slug>/` alongside the code:
 
 ```
-<repo-root>/docflow/
+<repo-root>/
   myproject/
     README.md
     Plan.md

@@ -76,7 +76,7 @@ export function registerDocflowCommands(state: CommandState, pi: ExtensionAPI): 
       state.saveConfig(state.config);
 
       // Seed README if missing
-      const readmePath = getProjectPath(state.config, slug, "docflow/<slug>/README.md");
+      const readmePath = getProjectPath(state.config, slug, "<slug>/README.md");
       if (readmePath && !existsSync(readmePath)) {
         writeFileSync(
           readmePath,

@@ -61,13 +61,13 @@ export function regenerateContextIndex(config: DocflowConfig, slug: string): voi
     "",
   ];
 
-  const path = getProjectPath(config, slug, "docflow/<slug>/_Context.md");
+  const path = getProjectPath(config, slug, "<slug>/_Context.md");
   if (path) writeFileSync(path, lines.join("\n"), "utf-8");
 }
 
 export function regenerateMasterIndex(config: DocflowConfig): void {
   const vaultPath = config.vaultPath || resolve(process.env.HOME || ".", "Documents", "vault");
-  const indexPath = resolve(vaultPath, "docflow/_Index.md");
+  const indexPath = resolve(vaultPath, "_Index.md");
   ensureDir(dirname(indexPath));
 
   let md = "# Projects\n\n";

@@ -239,12 +239,12 @@ describe("briefing", () => {
 
       regenerateMasterIndex(config);
 
-      // _Index.md is created at vaultPath/docflow/_Index.md
-      expect(fs.existsSync(path.join(tmpDir, "docflow", "_Index.md"))).toBe(true);
+      // _Index.md is created at vaultPath/_Index.md
+      expect(fs.existsSync(path.join(tmpDir, "_Index.md"))).toBe(true);
     });
 
     it("lists projects in the index", () => {
-      const projectDir = path.join(tmpDir, "docflow", "mp2");
+      const projectDir = path.join(tmpDir, "mp2");
       fs.mkdirSync(projectDir, { recursive: true });
       fs.writeFileSync(path.join(projectDir, "Sessions.md"), "# Sessions\n\n## Active\n");
 
@@ -261,7 +261,7 @@ describe("briefing", () => {
 
       regenerateMasterIndex(config);
 
-      const indexContent = fs.readFileSync(path.join(tmpDir, "docflow", "_Index.md"), "utf-8");
+      const indexContent = fs.readFileSync(path.join(tmpDir, "_Index.md"), "utf-8");
       expect(indexContent).toContain("Master Project 2");
     });
   });

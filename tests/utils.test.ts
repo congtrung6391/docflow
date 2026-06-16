@@ -176,8 +176,8 @@ describe("utils", () => {
           },
         },
       };
-      const result = getProjectPath(config, "myproject", "docflow/<slug>/Plan.md");
-      expect(result).toBe("/vault/docflow/myproject/Plan.md");
+      const result = getProjectPath(config, "myproject", "<slug>/Plan.md");
+      expect(result).toBe("/vault/myproject/Plan.md");
     });
 
     it("returns repo path for repo-mode projects", () => {
@@ -192,8 +192,8 @@ describe("utils", () => {
           },
         },
       };
-      const result = getProjectPath(config, "myproject", "docflow/<slug>/Plan.md");
-      expect(result).toBe("/repos/myproject/docflow/myproject/Plan.md");
+      const result = getProjectPath(config, "myproject", "<slug>/Plan.md");
+      expect(result).toBe("/repos/myproject/myproject/Plan.md");
     });
 
     it("handles vault path without trailing slash", () => {
@@ -207,8 +207,8 @@ describe("utils", () => {
           },
         },
       };
-      const result = getProjectPath(config, "myproject", "docflow/<slug>/Sub/Plan.md");
-      expect(result).toBe("/vault/docflow/myproject/Sub/Plan.md");
+      const result = getProjectPath(config, "myproject", "<slug>/Sub/Plan.md");
+      expect(result).toBe("/vault/myproject/Sub/Plan.md");
     });
 
     it("returns null for non-existent project", () => {

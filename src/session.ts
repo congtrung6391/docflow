@@ -27,7 +27,7 @@ export function createSessionCard(sessionId: string, cwd: string): SessionCard {
 export function updateSessionInMarkdown(config: DocflowConfig, card: SessionCard): void {
   if (card.project === "_unassigned") return;
 
-  const content = safeRead(getProjectPath(config, card.project, "docflow/<slug>/Sessions.md")!);
+  const content = safeRead(getProjectPath(config, card.project, "<slug>/Sessions.md")!);
   const lines = content ? content.split("\n") : [];
 
   let found = false;
@@ -55,7 +55,7 @@ export function updateSessionInMarkdown(config: DocflowConfig, card: SessionCard
     lines.splice(insertAt, 0, line);
   }
 
-  const path = getProjectPath(config, card.project, "docflow/<slug>/Sessions.md");
+  const path = getProjectPath(config, card.project, "<slug>/Sessions.md");
   if (path) {
     ensureDir(dirname(path));
     writeFileSync(path, lines.join("\n"), "utf-8");
