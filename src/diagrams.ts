@@ -916,12 +916,6 @@ function createText(
   };
 }
 
-// Centre fixedPoint for elbow bindings (avoids exactly 0.5, which trips
-// Excalidraw's precision handling). Orbiting the centre — rather than pinning a
-// specific edge point — lets Excalidraw choose the attachment side and re-route
-// the arrow automatically as boxes move.
-const ELBOW_CENTER: [number, number] = [0.5001, 0.5001];
-
 function createBoundArrow(
   start: { x: number; y: number },
   end: { x: number; y: number },
@@ -938,25 +932,22 @@ function createBoundArrow(
     elbowed?: boolean;
   }
 ): El {
-  const gap = style.gap ?? 3;
+  const gap = style.gap ?? 4;
   const points: Array<[number, number]> = [
     [0, 0],
     ...midPoints.map(([px, py]) => [px - start.x, py - start.y] as [number, number]),
     [end.x - start.x, end.y - start.y],
   ];
   const elbowed = !!style.elbowed;
-  // Match the EXACT binding shape the Obsidian Excalidraw plugin (v2.23.x) emits
-  // for elbow arrows: { elementId, mode:"orbit", fixedPoint }. We orbit the box
-  // CENTRE so the arrow just "connects the box" and Excalidraw auto-picks the
-  // side/direction (instead of sticking to a fixed edge point). No focus/gap and
-  // NO fixedSegments/startIsSpecial/endIsSpecial (absent in this version; emitting
-  // them made restore reject the elbow). Non-elbow arrows keep { elementId, focus, gap }.
-  const startBinding: Record<string, unknown> = elbowed
-    ? { elementId: fromId, mode: "orbit", fixedPoint: ELBOW_CENTER }
-    : { elementId: fromId, focus: style.startFocus ?? 0, gap };
-  const endBinding: Record<string, unknown> = elbowed
-    ? { elementId: toId, mode: "orbit", fixedPoint: ELBOW_CENTER }
-    : { elementId: toId, focus: style.endFocus ?? 0, gap };
+  // Standard binding for ALL arrows: { elementId, focus, gap }. This makes
+  // Excalidraw clip the arrow to the box EDGE (with the gap) and recompute it as
+  // boxes move — i.e. "just connect the box, auto-adjust". We deliberately do NOT
+  // set `fixedPoint`/`mode`: a fixedPoint is a literal target point (an edge spot
+  // pins the arrow there; the centre sends the arrowhead INTO the box), neither of
+  // which auto-adjusts. Elbow arrows use focus 0 so the attach point is purely
+  // auto; `elbowed:true` just makes the route orthogonal.
+  const startBinding: Record<string, unknown> = { elementId: fromId, focus: elbowed ? 0 : style.startFocus ?? 0, gap };
+  const endBinding: Record<string, unknown> = { elementId: toId, focus: elbowed ? 0 : style.endFocus ?? 0, gap };
   return {
     id: genId(),
     type: "arrow",
@@ -1317,11 +1308,17 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
     const { a, from, to, fromBounds, toBounds, fromSide, toSide, waypoints, channel, elbow } = plan;
     const start = portPoint(fromBounds, fromSide, plan.startT);
     const end = portPoint(toBounds, toSide, plan.endT);
-    const route = channel
-      ? sideChannelRoute(start, end, channelCross(channel, plan.laneIdx), direction)
-      : useOrthogonal
-        ? orthogonalRoute(start, end, waypoints, direction)
-        : [start, end];
+    // Elbow arrows: store just the two endpoints and let Excalidraw's elbow
+    // router compute (and continuously re-adjust) the orthogonal path — its
+    // algorithm handles obstacle-avoidance and side selection. We only do our own
+    // routing for non-elbow modes (straight = direct line).
+    const route = elbow
+      ? [start, end]
+      : channel
+        ? sideChannelRoute(start, end, channelCross(channel, plan.laneIdx), direction)
+        : useOrthogonal
+          ? orthogonalRoute(start, end, waypoints, direction)
+          : [start, end];
     const midPoints = route.slice(1, -1).map((p) => [p.x, p.y] as [number, number]);
 
     const arrow = createBoundArrow(start, end, from.id as string, to.id as string, midPoints, {
