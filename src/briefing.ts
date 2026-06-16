@@ -1,4 +1,4 @@
-import { writeFileSync, readdirSync } from "node:fs";
+import { writeFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import type { DocflowConfig } from "./types";
 import { generateKanbanMarkdown, parseKanbanColumns, getNextTaskId } from "./kanban";
@@ -9,9 +9,12 @@ import { getProjectPath, safeRead, nowISO, ensureDir, readDoc, writeDoc } from "
 // ────────────────────────────────────────────────────────────────────────────
 
 export function generateBriefing(config: DocflowConfig, slug: string): string {
-  const plan = safeRead(getProjectPath(config, slug, "docflow/<slug>/Plan.md"));
-  const design = safeRead(getProjectPath(config, slug, "docflow/<slug>/Design.md"));
-  const decisions = safeRead(getProjectPath(config, slug, "docflow/<slug>/Decisions.md"));
+  const planPath = getProjectPath(config, slug, "docflow/<slug>/Plan.md");
+  const designPath = getProjectPath(config, slug, "docflow/<slug>/Design.md");
+  const decisionsPath = getProjectPath(config, slug, "docflow/<slug>/Decisions.md");
+  const plan = safeRead(planPath ?? "") ?? "";
+  const design = safeRead(designPath ?? "") ?? "";
+  const decisions = safeRead(decisionsPath ?? "") ?? "";
 
   let result = "";
   if (plan) {
@@ -30,8 +33,10 @@ export function generateBriefing(config: DocflowConfig, slug: string): string {
 }
 
 export function regenerateContextIndex(config: DocflowConfig, slug: string): void {
-  const plan = safeRead(getProjectPath(config, slug, "docflow/<slug>/Plan.md"));
-  const design = safeRead(getProjectPath(config, slug, "docflow/<slug>/Design.md"));
+  const planPath = getProjectPath(config, slug, "docflow/<slug>/Plan.md");
+  const designPath = getProjectPath(config, slug, "docflow/<slug>/Design.md");
+  const plan = safeRead(planPath ?? "") ?? "";
+  const design = safeRead(designPath ?? "") ?? "";
 
   const lines = [
     "# Project Context Index",
@@ -68,8 +73,10 @@ export function regenerateMasterIndex(config: DocflowConfig): void {
   let md = "# Projects\n\n";
 
   for (const [slug, proj] of Object.entries(config.projects)) {
-    const tasks = safeRead(getProjectPath(config, slug, "docflow/<slug>/Tasks.md"));
-    const sessions = safeRead(getProjectPath(config, slug, "docflow/<slug>/Sessions.md"));
+    const tasksPath = getProjectPath(config, slug, "docflow/<slug>/Tasks.md");
+    const sessionsPath = getProjectPath(config, slug, "docflow/<slug>/Sessions.md");
+    const tasks = safeRead(tasksPath ?? "") ?? "";
+    const sessions = safeRead(sessionsPath ?? "") ?? "";
 
     const hasDoing = tasks?.includes("## Doing") && tasks.split("## Doing")[1]?.includes("- [x]");
     const hasActive = sessions?.includes("## Active");
@@ -93,8 +100,9 @@ export function ensureProjectDocs(config: DocflowConfig, slug: string): void {
   if (!base) return;
   ensureDir(base);
 
-  const files = readdirSync(base);
-  if (!files.includes("Tasks.md")) {
+  const hasExistingFiles = existsSync(base) && readdirSync(base).length > 0;
+
+  if (!hasExistingFiles || !readdirSync(base).includes("Tasks.md")) {
     writeDoc(
       config,
       slug,
@@ -102,13 +110,13 @@ export function ensureProjectDocs(config: DocflowConfig, slug: string): void {
       generateKanbanMarkdown({ Backlog: [], Doing: [], Blocked: [], Done: [], Archive: [] }, true)
     );
   }
-  if (!files.includes("Sessions.md")) {
+  if (!hasExistingFiles || !readdirSync(base).includes("Sessions.md")) {
     writeDoc(config, slug, "Sessions.md", "# Sessions\n\n## Active\n\n## Idle\n\n## Stale\n\n## Ended\n\n");
   }
-  if (!files.includes("_Context.md")) {
+  if (!hasExistingFiles || !readdirSync(base).includes("_Context.md")) {
     regenerateContextIndex(config, slug);
   }
-  if (!files.includes("Decisions.md")) {
+  if (!hasExistingFiles || !readdirSync(base).includes("Decisions.md")) {
     writeDoc(config, slug, "Decisions.md", "# Decision Log\n\n_No decisions yet._\n");
   }
 }

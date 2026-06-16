@@ -116,7 +116,7 @@ export function registerDocflowCommands(state: CommandState, pi: ExtensionAPI): 
         `✅ Done: ${(done.match(/- \[x\]/g) || []).length} task(s)`,
       ];
 
-      ctx.ui.setHeader(lines);
+      ctx.ui.notify(lines.join("\n"), "info");
     },
   });
 
@@ -129,8 +129,7 @@ export function registerDocflowCommands(state: CommandState, pi: ExtensionAPI): 
     handler: async (_args, ctx) => {
       const slug = state.currentProject || "_unassigned";
       const briefing = generateBriefing(state.config, slug);
-      const lines = briefing.split("\n").slice(0, 12);
-      ctx.ui.setHeader(lines);
+      ctx.ui.notify(briefing || "_No briefing available._", "info");
     },
   });
 }

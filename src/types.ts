@@ -5,7 +5,6 @@
 export interface DocflowConfig {
   vaultPath?: string;   // shared-vault root (used when docStorage === "vault")
   projects: Record<string, ProjectConfig>;
-  worktreeMap: Record<string, string>;
 }
 
 export interface ProjectConfig {

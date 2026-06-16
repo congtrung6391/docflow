@@ -8,23 +8,27 @@ import { getProjectPath, ensureDir, shortenId, minutesAgo, safeRead } from "./ut
 // ────────────────────────────────────────────────────────────────────────────
 
 export function createSessionCard(sessionId: string, cwd: string): SessionCard {
+  const now = new Date().toISOString();
   return {
     id: `sess-${Date.now()}-${shortenId(sessionId, 4)}`,
     sessionId,
     project: "_unassigned",
     status: "active",
-    startedAt: new Date().toISOString(),
-    lastActivity: new Date().toISOString(),
+    startedAt: now,
+    lastActivity: now,
     lastPrompt: "Session started",
     branch: "",
     cwd,
     claimedTask: "",
+    endedAt: now,
   };
 }
 
 export function updateSessionInMarkdown(config: DocflowConfig, card: SessionCard): void {
+  if (card.project === "_unassigned") return;
+
   const content = safeRead(getProjectPath(config, card.project, "docflow/<slug>/Sessions.md")!);
-  const lines = content.split("\n");
+  const lines = content ? content.split("\n") : [];
 
   let found = false;
   for (let i = 0; i < lines.length; i++) {
@@ -43,13 +47,17 @@ export function updateSessionInMarkdown(config: DocflowConfig, card: SessionCard
     const headerIdx = lines.findIndex((l) => l === `## ${status}`);
     const insertAt = headerIdx >= 0 ? headerIdx + 1 : lines.length;
 
-    lines.splice(
-      insertAt,
-      0,
-      `- **${shortenId(card.id, 5)}** | ${minutesAgo(card.lastActivity)}m ago`
-    );
+    let line = `- **${shortenId(card.id, 5)}**`;
+    if (card.project !== "_unassigned") line += ` [${card.project}]`;
+    if (card.claimedTask) line += ` → ${card.claimedTask}`;
+    line += ` | ${minutesAgo(card.lastActivity)}m ago`;
+
+    lines.splice(insertAt, 0, line);
   }
 
   const path = getProjectPath(config, card.project, "docflow/<slug>/Sessions.md");
-  if (path) writeFileSync(path, lines.join("\n"), "utf-8");
+  if (path) {
+    ensureDir(dirname(path));
+    writeFileSync(path, lines.join("\n"), "utf-8");
+  }
 }

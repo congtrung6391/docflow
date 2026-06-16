@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { DocflowConfig, SessionCard } from "./types";
 import { resolveProject, nowISO, readDoc } from "./utils";
@@ -8,7 +9,13 @@ export interface DocflowState {
   config: DocflowConfig;
   currentProject: string | null;
   currentSessionCard: SessionCard | null;
+  lastCwd: string;
   ensureProject: (slug: string) => void;
+}
+
+/** Resolve the skills directory relative to this source file */
+export function getSkillPath(): string {
+  return join(__dirname, "..");
 }
 
 const STALE_MINUTES = 120;
@@ -21,15 +28,27 @@ function minutesAgo(dateStr: string): number {
 
 export function registerDocflowEvents(state: DocflowState, pi: ExtensionAPI): void {
   // ──────────────────────────────────────────────────────────────────────
+  // Event: resources_discover (tell Pi where skills live)
+  // ──────────────────────────────────────────────────────────────────────
+
+  pi.on("resources_discover", async (event, _ctx) => {
+    if (event.reason === "startup" || event.reason === "reload") {
+      return {
+        skillPaths: [getSkillPath()],
+      };
+    }
+    return {};
+  });
+  // ──────────────────────────────────────────────────────────────────────
   // Event: session_start
   // ──────────────────────────────────────────────────────────────────────
 
   pi.on("session_start", async (_event, ctx) => {
-    const sessionId = ctx.sessionManager.getLeafId();
+    const sessionId = ctx.sessionManager.getLeafId() || "unknown";
     const cwd = process.cwd();
 
     const resolved = resolveProject(cwd, state.config);
-    const slug = resolved || state.currentProject || "_unassigned";
+    const slug: string = (resolved || state.currentProject || "_unassigned") as string;
 
     if (slug !== "_unassigned") state.ensureProject(slug);
 
@@ -76,7 +95,7 @@ export function registerDocflowEvents(state: DocflowState, pi: ExtensionAPI): vo
   // Event: before_agent_start
   // ──────────────────────────────────────────────────────────────────────
 
-  pi.on("before_agent_start", async (event, ctx) => {
+  pi.on("before_agent_start", async (event: { prompt: string }, _ctx) => {
     const slug = state.currentProject || "_unassigned";
     if (slug === "_unassigned") return;
 
@@ -93,11 +112,7 @@ export function registerDocflowEvents(state: DocflowState, pi: ExtensionAPI): vo
       ...lines.filter((l) => !l.startsWith("# Project Context")),
     ].join("\n");
 
-    if (event.message) {
-      event.message = `${briefing}\n\n---\n\n${event.message}`;
-    } else {
-      event.message = briefing;
-    }
+    event.prompt = `${briefing}\n\n---\n\n${event.prompt}`;
   });
 
   // ──────────────────────────────────────────────────────────────────────
@@ -142,10 +157,11 @@ export function registerDocflowEvents(state: DocflowState, pi: ExtensionAPI): vo
   // Event: tool_call (detect direct doc writes)
   // ──────────────────────────────────────────────────────────────────────
 
-  pi.on("tool_call", async (event, ctx) => {
-    if (event.input?.tool_name === "Write" && state.currentProject && state.currentProject !== "_unassigned") {
-      const args = event.input?.arguments as Record<string, unknown>;
-      const filePath = args?.path as string;
+  pi.on("tool_call", async (event: { toolName: string; input?: Record<string, unknown> }, _ctx) => {
+    const toolName = event.toolName;
+    if (toolName === "Write" && state.currentProject && state.currentProject !== "_unassigned") {
+      const args = event.input as Record<string, unknown> | undefined;
+      const filePath = args?.path as string | undefined;
       if (filePath) {
         const fileName = filePath.split("/").pop() || "";
         const docMap = ["Plan.md", "Design.md", "Decisions.md", "Tasks.md"];

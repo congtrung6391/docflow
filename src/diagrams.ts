@@ -8,8 +8,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
-import { join, dirname, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
+import { dirname, basename, resolve } from "node:path";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Excalidraw element types (simplified for AI)
@@ -18,7 +18,7 @@ import { resolve } from "node:path";
 type Shape = "box" | "circle" | "diamond" | "text" | "note" | "image" | "frame";
 type Arrow = "arrow" | "line" | "connector";
 
-const SHAPE_MAP: Record<Shape, string> = {
+const SHAPE_MAP: Record<string, string> = {
   box: "rectangle",
   circle: "ellipse",
   diamond: "diamond",
@@ -37,7 +37,7 @@ const COLOR_MAP: Record<string, string> = {
   teal: "#00b4d8",
   gray: "#6e6e6e",
   black: "#000000",
-};
+} as const;
 
 const BACKGROUND_MAP: Record<string, string> = {
   blue: "#ddf4ff",
@@ -48,13 +48,13 @@ const BACKGROUND_MAP: Record<string, string> = {
   teal: "#cffbff",
   gray: "#f0f0f0",
   light: "#ffffff",
-};
+} as const;
 
-const STROKE_WIDTH_MAP: Record<number, number> = {
-  1: 1,
-  2: 2,
-  3: 3,
-  4: 4,
+const STROKE_WIDTH_MAP: Record<string, number> = {
+  "1": 1,
+  "2": 2,
+  "3": 3,
+  "4": 4,
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -114,14 +114,14 @@ function createExcalidrawElement(
     angle: 0,
     strokeColor: style.strokeColor || COLOR_MAP.blue,
     backgroundColor: style.backgroundColor || BACKGROUND_MAP.light,
-    fillStyle: style.fillStyle || "hachure" as "hachure" | "solid" | "cross-hatch" | "scribble" | "none",
+    fillStyle: style.fillStyle || "hachure",
     strokeWidth: style.strokeWidth || 2,
-    strokeStyle: style.strokeStyle || "solid" as "solid" | "dashed" | "dotted" | "heron",
+    strokeStyle: style.strokeStyle || "solid",
     roughness: 1,
     opacity: 100,
     groupIds: [],
     frameId: null,
-    roundness: type !== "line" ? { type: 2 } as { type: number } : null,
+    roundness: type !== "line" ? { type: 2 } : null,
     boundElements: null,
     locked: false,
   };
@@ -129,24 +129,24 @@ function createExcalidrawElement(
   if (type === "text" || type === "frame") {
     base.text = label;
     base.fontSize = style.fontSize || 20;
-    base.font = style.font || "sans" as "sans" | "serif" | "mono";
+    base.font = style.font || "sans";
     base.fontWeight = style.fontWeight || 400;
-    base.textAlign = "center" as "center" | "left" | "right";
-    base.verticalAlign = "middle" as "middle" | "top" | "bottom";
+    base.textAlign = "center";
+    base.verticalAlign = "middle";
   } else {
     base.text = label;
     base.fontSize = style.fontSize || 16;
-    base.font = style.font || "sans" as "sans" | "serif" | "mono";
+    base.font = style.font || "sans";
     base.fontWeight = style.fontWeight || 400;
-    base.textAlign = "center" as "center" | "left" | "right";
-    base.verticalAlign = "middle" as "middle" | "top" | "bottom";
+    base.textAlign = "center";
+    base.verticalAlign = "middle";
   }
 
   if (type === "arrow" || type === "connector") {
     base.startArrowHead = style.arrowStart || null;
     base.endArrowHead = style.arrowEnd || "arrow";
-    base.startPoint = style.startPoint || "outside" as "outside" | "point";
-    base.endPoint = style.endPoint || "outside" as "outside" | "point";
+    base.startPoint = style.startPoint || "outside";
+    base.endPoint = style.endPoint || "outside";
     base.route = style.route || [];
   }
 
@@ -176,7 +176,7 @@ function createArrowElement(
     angle: 0,
     strokeColor: style.strokeColor || COLOR_MAP.gray,
     backgroundColor: "transparent",
-    fillStyle: "none" as const,
+    fillStyle: "none",
     strokeWidth: style.strokeWidth || 2,
     strokeStyle: style.strokeStyle || "solid",
     roughness: 1,
@@ -186,7 +186,6 @@ function createArrowElement(
     roundness: { type: 2 },
     boundElements: null,
     locked: false,
-    // Arrow-specific
     startBinding: null,
     endBinding: null,
     startArrowHead: style.arrowStart || null,
@@ -197,7 +196,6 @@ function createArrowElement(
       [0, 0],
       [x2 - x1, y2 - y1],
     ],
-    // Optional: label positioning
     label: label || "",
   };
 }
@@ -228,7 +226,7 @@ function buildExcalidrawScene(
   };
 
   if (title) {
-    scene.appState.title = title;
+    (scene.appState as Record<string, unknown>).title = title;
   }
 
   return JSON.stringify(scene, null, 2);
@@ -495,7 +493,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
       title: Type.Optional(Type.String()),
       description: Type.Optional(Type.String()),
       elements: Type.Optional(Type.Array(Type.Object({
-        type: StringEnum(["box", "circle", "diamond", "text", "note", "image", "frame"]) as const,
+        type: StringEnum(["box", "circle", "diamond", "text", "note", "image", "frame"]),
         label: Type.String(),
         x: Type.Optional(Type.Number()),
         y: Type.Optional(Type.Number()),
@@ -524,7 +522,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
     ],
     async execute(_toolCallId, params) {
       const slug = params.project || "_unassigned";
-      const filePath = params.filePath || resolveProjectPath(slug, "docflow/<slug>/diagrams/_Sketch.md");
+      const filePath = params.filePath || resolveProjectPath(slug, "docflow/<slug>/diagrams/_Sketch.md") || `${slug}/docflow/diagrams/_Sketch.md`;
 
       // Parse elements
       const elements: Record<string, unknown>[] = [];
@@ -543,9 +541,9 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
 
         params.elements.forEach((e, i) => {
           const pos = positions[i];
-          const excalidrawType = SHAPE_MAP[e.type];
-          const strokeColor = COLOR_MAP[e.strokeColor] || e.strokeColor || COLOR_MAP.blue;
-          const bgColor = COLOR_MAP[e.backgroundColor] || e.backgroundColor || BACKGROUND_MAP.light;
+          const excalidrawType = SHAPE_MAP[e.type] || "rectangle";
+          const strokeColor = COLOR_MAP[e.strokeColor || ""] || e.strokeColor || COLOR_MAP.blue;
+          const bgColor = COLOR_MAP[e.backgroundColor || ""] || e.backgroundColor || BACKGROUND_MAP.light;
 
           const el = createExcalidrawElement(
             excalidrawType,
@@ -575,15 +573,24 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
           const toEl = labeledElements[arrow.to];
 
           if (fromEl && toEl) {
+            const fromX = typeof fromEl.x === "number" ? fromEl.x : 0;
+            const fromY = typeof fromEl.y === "number" ? fromEl.y : 0;
+            const fromW = typeof fromEl.width === "number" ? fromEl.width : 160;
+            const fromH = typeof fromEl.height === "number" ? fromEl.height : 60;
+            const toX = typeof toEl.x === "number" ? toEl.x : 0;
+            const toY = typeof toEl.y === "number" ? toEl.y : 0;
+            const toW = typeof toEl.width === "number" ? toEl.width : 160;
+            const toH = typeof toEl.height === "number" ? toEl.height : 60;
+
             const arrowEl = createArrowElement(
-              fromEl.x + (fromEl.width || 160) / 2,
-              fromEl.y + (fromEl.height || 60) / 2,
-              toEl.x + (toEl.width || 160) / 2,
-              toEl.y + (toEl.height || 60) / 2,
+              fromX + fromW / 2,
+              fromY + fromH / 2,
+              toX + toW / 2,
+              toY + toH / 2,
               arrow.label || "",
               {
                 arrowEnd: "arrow",
-                strokeColor: COLOR_MAP[arrow.strokeColor] || arrow.strokeColor || COLOR_MAP.gray,
+                strokeColor: COLOR_MAP[arrow.strokeColor || ""] || arrow.strokeColor || COLOR_MAP.gray,
               }
             );
             elements.push(arrowEl);
@@ -638,7 +645,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
       project: Type.Optional(Type.String()),
       filePath: Type.Optional(Type.String()),
       title: Type.Optional(Type.String()),
-      type: StringEnum(["sequence", "flowchart", "state", "gantt", "class", "er"]) as const,
+      type: StringEnum(["sequence", "flowchart", "state", "gantt", "class", "er"]),
       description: Type.Optional(Type.String()),
       // Parameters vary by type
       nodes: Type.Optional(Type.String()),
@@ -661,20 +668,20 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
     ],
     async execute(_toolCallId, params) {
       const slug = params.project || "_unassigned";
-      const filePath = params.filePath || resolveProjectPath(slug, "docflow/<slug>/diagrams/_Sketch.md");
+      const filePath = params.filePath || resolveProjectPath(slug, "docflow/<slug>/diagrams/_Sketch.md") || `${slug}/docflow/diagrams/_Sketch.md`;
 
       const mermaidBlock = generateMermaidBlock(params.type, {
-        nodes: params.nodes,
-        edges: params.edges,
-        actors: params.actors,
-        messages: params.messages,
-        states: params.states,
-        transitions: params.transitions,
-        initial: params.initial,
-        tasks: params.tasks,
-        entities: params.entities,
-        relationships: params.relationships,
-        classes: params.classes,
+        nodes: params.nodes ?? "",
+        edges: params.edges ?? "",
+        actors: params.actors ?? "",
+        messages: params.messages ?? "",
+        states: params.states ?? "",
+        transitions: params.transitions ?? "",
+        initial: params.initial ?? "",
+        tasks: params.tasks ?? "",
+        entities: params.entities ?? "",
+        relationships: params.relationships ?? "",
+        classes: params.classes ?? "",
       });
 
       const content = renderMermaidBlock(mermaidBlock, params.title || `${params.type} Diagram`);
@@ -717,7 +724,11 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
     }),
     promptSnippet: "Update an existing Excalidraw diagram",
     async execute(_toolCallId, params) {
-      const result = updateExcalidrawFile(params.filePath, params.changes);
+      const changesWithId: Array<{ id: string; changes: Record<string, unknown> }> = params.changes.map((c) => ({
+        id: c.elementId,
+        changes: c.changes as Record<string, unknown>,
+      }));
+      const result = updateExcalidrawFile(params.filePath, changesWithId);
 
       return {
         content: [{ type: "text", text: result.success ? result.message : `Error: ${result.message}` }],
@@ -741,31 +752,34 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
     promptSnippet: "Check diagram status",
     async execute(_toolCallId, params) {
       const slug = params.project || "_unassigned";
-      const diagramsDir = params.filePath || resolveProjectPath(slug, "docflow/<slug>/diagrams/");
+      const diagramsDir = params.filePath || resolveProjectPath(slug, "docflow/<slug>/diagrams/") || `${slug}/docflow/diagrams/`;
 
       if (!existsSync(diagramsDir)) {
         return {
           content: [{ type: "text", text: `No diagrams directory found for project: ${slug}` }],
+          details: { action: "diagram_status", project: slug, count: 0, error: "directory not found" },
         };
       }
 
       try {
         const files = readdirSync(diagramsDir);
-        const diagramFiles = files.filter((f) => f.endsWith(".json") || f.endsWith(".excalidraw") || f.endsWith(".md"));
+        const diagramFiles = files.filter((f: string) => f.endsWith(".json") || f.endsWith(".excalidraw") || f.endsWith(".md"));
 
         return {
           content: [
             {
               type: "text",
               text: diagramFiles.length > 0
-                ? `Found ${diagramFiles.length} diagram(s) in ${diagramsDir}:\n${diagramFiles.map((f) => `  - ${f}`).join("\n")}`
+                ? `Found ${diagramFiles.length} diagram(s) in ${diagramsDir}:\n${diagramFiles.map((f: string) => `  - ${f}`).join("\n")}`
                 : `No diagrams in ${diagramsDir}`,
             },
           ],
+          details: { action: "diagram_status", project: slug, count: diagramFiles.length, error: undefined as string | undefined },
         };
       } catch {
         return {
           content: [{ type: "text", text: `Error reading diagrams directory: ${diagramsDir}` }],
+          details: { action: "diagram_status", project: slug, count: 0, error: "read failed" },
         };
       }
     },
@@ -779,7 +793,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
     description: "Create an Excalidraw diagram for the current project",
     handler: async (args, ctx) => {
       const slug = getCurrentProject() || "_unassigned";
-      const dir = resolveProjectPath(slug, "docflow/<slug>/diagrams/");
+      const dir = resolveProjectPath(slug, "docflow/<slug>/diagrams/") || `${slug}/docflow/diagrams/`;
       ensureDir(dir);
       ctx.ui.notify(`📐 Diagram directory ready: ${basename(dir)}`, "info");
     },
@@ -789,7 +803,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
     description: "Create a Mermaid diagram for the current project",
     handler: async (args, ctx) => {
       const slug = getCurrentProject() || "_unassigned";
-      const dir = resolveProjectPath(slug, "docflow/<slug>/diagrams/");
+      const dir = resolveProjectPath(slug, "docflow/<slug>/diagrams/") || `${slug}/docflow/diagrams/`;
       ensureDir(dir);
       ctx.ui.notify(`📐 Diagram directory ready: ${basename(dir)}`, "info");
     },

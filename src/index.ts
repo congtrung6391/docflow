@@ -11,7 +11,8 @@ import { registerDocflowRead, registerDocflowWrite, registerDocflowTask, registe
 import { registerDocflowCommands, CommandState } from "./commands";
 import { registerDocflowEvents, DocflowState } from "./events";
 import { registerDiagramTools } from "./diagrams";
-import { loadConfig, saveConfig, nowISO, ensureProjectDocs, getProjectPath, regenerateContextIndex, regenerateMasterIndex } from "./utils";
+import { loadConfig, saveConfig, nowISO, getProjectPath } from "./utils";
+import { ensureProjectDocs, regenerateContextIndex, regenerateMasterIndex } from "./briefing";
 import type { DocflowConfig, SessionCard } from "./types";
 
 export default function docflowExtension(pi: ExtensionAPI): void {
@@ -26,6 +27,20 @@ export default function docflowExtension(pi: ExtensionAPI): void {
     currentProject: null,
     currentSessionCard: null,
     lastCwd: process.cwd(),
+    ensureProject: (slug: string) => {
+      if (!config.projects[slug]) {
+        config.projects[slug] = {
+          name: slug,
+          createdAt: nowISO(),
+          worktreePath: state.lastCwd,
+          docStorage: "vault",
+        };
+        saveConfig(config);
+      }
+      ensureProjectDocs(config, slug);
+      regenerateContextIndex(config, slug);
+      regenerateMasterIndex(config);
+    },
   };
 
   // ──────────────────────────────────────────────────────────────────────

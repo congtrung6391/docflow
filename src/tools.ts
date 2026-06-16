@@ -18,7 +18,7 @@ export function registerDocflowRead(pi: ExtensionAPI, config: DocflowConfig, get
     description:
       "Read a project document from the shared vault. Use to check Plan.md, Design.md, Tasks.md, Decisions.md, _Context.md for a project.",
     parameters: Type.Object({
-      document: StringEnum(["plan", "design", "tasks", "sessions", "decisions", "context"]) as const,
+      document: StringEnum(["plan", "design", "tasks", "sessions", "decisions", "context"]),
       project: Type.Optional(Type.String()),
     }),
     promptSnippet: "Read a project document (plan, design, tasks, decisions, context)",
@@ -41,7 +41,10 @@ export function registerDocflowRead(pi: ExtensionAPI, config: DocflowConfig, get
       const content = readDoc(config, slug, docName);
 
       if (!content) {
-        return { content: [{ type: "text", text: `Document not found: ${docName}` }] };
+        return {
+          content: [{ type: "text", text: `Document not found: ${docName}` }],
+          details: { document: params.document, project: slug, length: 0 },
+        };
       }
 
       return {
@@ -68,7 +71,7 @@ export function registerDocflowWrite(
     description:
       "Append to a project document. Use to log planning decisions, technical decisions, or track decisions with rejection rationale. Entries are append-only — one paragraph each.",
     parameters: Type.Object({
-      document: StringEnum(["plan", "design", "decisions"]) as const,
+      document: StringEnum(["plan", "design", "decisions"]),
       content: Type.String(),
       project: Type.Optional(Type.String()),
     }),
@@ -126,7 +129,7 @@ export function registerDocflowTask(
     description:
       "Manage tasks: create new, claim existing, mark done, block, or list. Use when splitting work into tasks, claiming work, or tracking progress.",
     parameters: Type.Object({
-      action: StringEnum(["new", "claim", "done", "block", "list"]) as const,
+      action: StringEnum(["new", "claim", "done", "block", "list"]),
       text: Type.Optional(Type.String()),
       reason: Type.Optional(Type.String()),
       project: Type.Optional(Type.String()),
@@ -149,7 +152,7 @@ export function registerDocflowTask(
       switch (params.action) {
         case "new": {
           const text = params.text;
-          if (!text) return { content: [{ type: "text", text: "Error: 'text' is required for 'new' action" }] };
+          if (!text) return { content: [{ type: "text", text: "Error: 'text' is required for 'new' action" }], details: { action: "new", project: slug, error: "missing text", length: undefined as number | undefined } as const };
 
           const id = getNextTaskId(content);
           columns["Backlog"].push({
@@ -165,7 +168,7 @@ export function registerDocflowTask(
 
         case "claim": {
           const text = params.text;
-          if (!text) return { content: [{ type: "text", text: "Error: 'text' is required for 'claim' action" }] };
+          if (!text) return { content: [{ type: "text", text: "Error: 'text' is required for 'claim' action" }], details: { action: "claim", project: slug, error: "missing text", length: undefined as number | undefined } as const };
 
           const backlog = columns["Backlog"];
           const matchIdx = backlog.findIndex((t) => t.text === text);
@@ -206,7 +209,7 @@ export function registerDocflowTask(
         case "done": {
           const doing = columns["Doing"] || [];
           if (doing.length === 0) {
-            return { content: [{ type: "text", text: "No task in Doing" }] };
+            return { content: [{ type: "text", text: "No task in Doing" }], details: { action: "done", project: slug, error: "no task in doing", length: undefined as number | undefined } as const };
           }
           const task = doing[doing.length - 1];
           columns["Doing"] = doing.filter((t) => t.id !== task.id);
@@ -226,7 +229,7 @@ export function registerDocflowTask(
         case "block": {
           const doing = columns["Doing"] || [];
           if (doing.length === 0) {
-            return { content: [{ type: "text", text: "No task in Doing" }] };
+            return { content: [{ type: "text", text: "No task in Doing" }], details: { action: "block", project: slug, error: "no task in doing", length: undefined as number | undefined } as const };
           }
           const task = doing[doing.length - 1];
           columns["Doing"] = doing.filter((t) => t.id !== task.id);
@@ -241,7 +244,7 @@ export function registerDocflowTask(
         case "list": {
           return {
             content: [{ type: "text", text: content || "No tasks yet." }],
-            details: { action: "list", project: slug, length: content.length },
+            details: { action: "list", project: slug, length: content.length, error: undefined as string | undefined } as const,
           };
         }
       }
@@ -251,7 +254,7 @@ export function registerDocflowTask(
 
       return {
         content: [{ type: "text", text: `Task ${params.action} applied to ${slug}` }],
-        details: { action: params.action, project: slug },
+        details: { action: params.action, project: slug, error: undefined as string | undefined, length: undefined as number | undefined } as const,
       };
     },
   });
@@ -273,7 +276,7 @@ export function registerDocflowSession(
     description:
       "Check session status or generate a context briefing. Shows project assignment, current task, and activity level.",
     parameters: Type.Object({
-      action: StringEnum(["status", "briefing"]) as const,
+      action: StringEnum(["status", "briefing"]),
       project: Type.Optional(Type.String()),
     }),
     promptSnippet: "Check session status or get briefing",
@@ -303,6 +306,7 @@ export function registerDocflowSession(
               ),
             },
           ],
+          details: { action: "status", project: slug, hasSession: !!sessionCard, length: 0 as number | undefined },
         };
       }
 
@@ -310,10 +314,11 @@ export function registerDocflowSession(
         const briefing = generateBriefing(config, slug);
         return {
           content: [{ type: "text", text: briefing || "No briefing content available." }],
+          details: { action: "briefing", project: slug, hasSession: false as boolean | undefined, length: briefing.length },
         };
       }
 
-      return { content: [{ type: "text", text: `Unknown action: ${params.action}` }] };
+      return { content: [{ type: "text", text: `Unknown action: ${params.action}` }], details: { action: "unknown", project: slug, hasSession: false as boolean | undefined, length: 0 as number | undefined } };
     },
   });
 }

@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, appendFileSync } from "node:fs";
-import { join, dirname, basename, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
+import { join, dirname, resolve } from "node:path";
 import type { DocflowConfig } from "./types";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -34,11 +34,11 @@ export function shortenId(id: string, length = 5): string {
   return id.replace(/[^a-zA-Z0-9]/g, "").slice(0, length);
 }
 
-export function safeRead(path: string): string {
+export function safeRead(path: string): string | null {
   try {
-    return existsSync(path) ? readFileSync(path, "utf-8") : "";
+    return existsSync(path) ? readFileSync(path, "utf-8") : null;
   } catch {
-    return "";
+    return null;
   }
 }
 
@@ -48,10 +48,10 @@ export function safeRead(path: string): string {
 
 export function loadConfig(): DocflowConfig {
   try {
-    if (!existsSync(CONFIG_FILE)) return { projects: {}, worktreeMap: {} };
+    if (!existsSync(CONFIG_FILE)) return { projects: {} };
     return JSON.parse(readFileSync(CONFIG_FILE, "utf-8"));
   } catch {
-    return { projects: {}, worktreeMap: {} };
+    return { projects: {} };
   }
 }
 
@@ -65,9 +65,11 @@ export function saveConfig(config: DocflowConfig): void {
 // ────────────────────────────────────────────────────────────────────────────
 
 export function resolveProject(cwd: string, config: DocflowConfig): string | null {
-  // Layer 1: worktree-map.json
-  for (const [path, slug] of Object.entries(config.worktreeMap)) {
-    if (cwd.startsWith(path)) return slug;
+  // Layer 1: match cwd against each project's worktreePath
+  for (const [slug, project] of Object.entries(config.projects)) {
+    if (cwd === project.worktreePath || cwd.startsWith(project.worktreePath + "/")) {
+      return slug;
+    }
   }
 
   // Layer 2: .pi/docflow-project file (walk up)
@@ -76,7 +78,7 @@ export function resolveProject(cwd: string, config: DocflowConfig): string | nul
   while (dir !== root && dir !== "/" && dir !== ".") {
     const projFile = join(dir, ".pi", "docflow-project");
     if (existsSync(projFile)) {
-      const slug = safeRead(projFile).trim();
+      const slug = safeRead(projFile)?.trim();
       if (slug && config.projects[slug]) return slug;
     }
     const parent = dirname(dir);
@@ -96,7 +98,7 @@ export function getProjectPath(config: DocflowConfig, slug: string, relativePath
       ? resolve(project.worktreePath, relativePath.replace("<slug>", slug))
       : resolve(config.vaultPath || resolve(process.env.HOME || ".", "Documents", "vault"), relativePath.replace("<slug>", slug));
 
-  return existsSync(path) ? path : null;
+  return path;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
