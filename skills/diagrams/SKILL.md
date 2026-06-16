@@ -1,6 +1,6 @@
 ---
 name: diagrams
-description: Draw CLEAN diagrams for project docs — architecture/C4, ER, state machine, data flow, sequence, flowchart, screenflow, UI wireframe, brainstorm/mind-map, scrum. The hard part is not routing, it is restraint: use FEW arrows, express structure with grouping and layout, and pick the diagram type whose conventions keep it tidy. Use draw_excalidraw for spatial/creative diagrams and draw_mermaid for strict standard ones. Never hand-write Excalidraw JSON or Mermaid.
+description: Draw clean diagrams for project docs — architecture/C4, ER, state machine, data flow, sequence, flowchart, screenflow, UI wireframe, brainstorm, scrum. Clarity comes from restraint — use few arrows, group with frames and layout, and pick the diagram type whose conventions keep it tidy. Use draw_excalidraw for spatial/creative diagrams and draw_mermaid for strict standard ones. Never hand-write Excalidraw or Mermaid.
 ---
 
 # Drawing clean diagrams

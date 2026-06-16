@@ -13,9 +13,11 @@ export interface DocflowState {
   ensureProject: (slug: string) => void;
 }
 
-/** Resolve the skills directory relative to this source file */
+/** Resolve the skills directory relative to this source file. Point at the
+ *  `skills/` folder specifically — returning the extension root made the skill
+ *  scanner treat top-level docs (DESIGN.md, README.md) as malformed skills. */
 export function getSkillPath(): string {
-  return join(__dirname, "..");
+  return join(__dirname, "..", "skills");
 }
 
 const STALE_MINUTES = 120;
