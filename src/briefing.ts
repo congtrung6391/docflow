@@ -9,9 +9,9 @@ import { getProjectPath, safeRead, nowISO, ensureDir, writeDoc } from "./utils";
 // ────────────────────────────────────────────────────────────────────────────
 
 export function generateBriefing(config: DocflowConfig, slug: string): string {
-  const planPath = getProjectPath(config, slug, "docflow/<slug>/Plan.md");
-  const designPath = getProjectPath(config, slug, "docflow/<slug>/Design.md");
-  const decisionsPath = getProjectPath(config, slug, "docflow/<slug>/Decisions.md");
+  const planPath = getProjectPath(config, slug, "<slug>/Plan.md");
+  const designPath = getProjectPath(config, slug, "<slug>/Design.md");
+  const decisionsPath = getProjectPath(config, slug, "<slug>/Decisions.md");
   const plan = safeRead(planPath ?? "") ?? "";
   const design = safeRead(designPath ?? "") ?? "";
   const decisions = safeRead(decisionsPath ?? "") ?? "";
@@ -33,8 +33,8 @@ export function generateBriefing(config: DocflowConfig, slug: string): string {
 }
 
 export function regenerateContextIndex(config: DocflowConfig, slug: string): void {
-  const planPath = getProjectPath(config, slug, "docflow/<slug>/Plan.md");
-  const designPath = getProjectPath(config, slug, "docflow/<slug>/Design.md");
+  const planPath = getProjectPath(config, slug, "<slug>/Plan.md");
+  const designPath = getProjectPath(config, slug, "<slug>/Design.md");
   const plan = safeRead(planPath ?? "") ?? "";
   const design = safeRead(designPath ?? "") ?? "";
 
@@ -73,8 +73,8 @@ export function regenerateMasterIndex(config: DocflowConfig): void {
   let md = "# Projects\n\n";
 
   for (const [slug, proj] of Object.entries(config.projects)) {
-    const tasksPath = getProjectPath(config, slug, "docflow/<slug>/Tasks.md");
-    const sessionsPath = getProjectPath(config, slug, "docflow/<slug>/Sessions.md");
+    const tasksPath = getProjectPath(config, slug, "<slug>/Tasks.md");
+    const sessionsPath = getProjectPath(config, slug, "<slug>/Sessions.md");
     const tasks = safeRead(tasksPath ?? "") ?? "";
     const sessions = safeRead(sessionsPath ?? "") ?? "";
 
@@ -96,7 +96,7 @@ export function regenerateMasterIndex(config: DocflowConfig): void {
 }
 
 export function ensureProjectDocs(config: DocflowConfig, slug: string): void {
-  const base = getProjectPath(config, slug, "docflow/<slug>/");
+  const base = getProjectPath(config, slug, "<slug>/");
   if (!base) return;
   ensureDir(base);
 
