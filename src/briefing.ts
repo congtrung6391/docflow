@@ -2,6 +2,7 @@ import { writeFileSync, readdirSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { DocflowConfig } from "./types";
 import { generateKanbanMarkdown } from "./kanban";
+import { SESSION_KANBAN_TEMPLATE } from "./session";
 import { getProjectPath, safeRead, nowISO, ensureDir, writeDoc } from "./utils";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -12,9 +13,13 @@ export function generateBriefing(config: DocflowConfig, slug: string): string {
   const planPath = getProjectPath(config, slug, "<slug>/Plan.md");
   const designPath = getProjectPath(config, slug, "<slug>/Design.md");
   const decisionsPath = getProjectPath(config, slug, "<slug>/Decisions.md");
+  const tasksPath = getProjectPath(config, slug, "<slug>/Tasks.md");
+  const sessionsPath = getProjectPath(config, slug, "<slug>/Sessions.md");
   const plan = safeRead(planPath ?? "") ?? "";
   const design = safeRead(designPath ?? "") ?? "";
   const decisions = safeRead(decisionsPath ?? "") ?? "";
+  const tasks = safeRead(tasksPath ?? "") ?? "";
+  const sessions = safeRead(sessionsPath ?? "") ?? "";
 
   let result = "";
   if (plan) {
@@ -28,6 +33,24 @@ export function generateBriefing(config: DocflowConfig, slug: string): string {
   if (decisions) {
     const lines = decisions.split("\n").slice(-10);
     result += `### Decisions\n${lines.join("\n").slice(0, 500)}\n\n`;
+  }
+  if (tasks) {
+    const activeTaskLines = tasks
+      .split("\n")
+      .filter((line) => line.startsWith("- [") && (tasks.includes("## Doing") || tasks.includes("## Blocked")))
+      .slice(-8);
+    if (activeTaskLines.length > 0) {
+      result += `### Task Board\n${activeTaskLines.join("\n").slice(0, 500)}\n\n`;
+    }
+  }
+  if (sessions) {
+    const activeSessionLines = sessions
+      .split("\n")
+      .filter((line) => line.startsWith("- [") && line.includes("**"))
+      .slice(-8);
+    if (activeSessionLines.length > 0) {
+      result += `### Session Board\n${activeSessionLines.join("\n").slice(0, 500)}\n\n`;
+    }
   }
   return result;
 }
@@ -47,7 +70,8 @@ export function regenerateContextIndex(config: DocflowConfig, slug: string): voi
     "",
     `- [[Plan.md]] ${plan ? "— *Updated*" : "— *Not set*"}`,
     `- [[Design.md]] ${design ? "— *Updated*" : "— *Not set*"}`,
-    "- [[Tasks.md]]",
+    "- [[Tasks.md]] — Kanban board (`kanban-plugin: board`)",
+    "- [[Sessions.md]] — Session Kanban board (`kanban-plugin: board`)",
     "- [[Decisions.md]]",
     "",
     "## Instructions",
@@ -58,6 +82,7 @@ export function regenerateContextIndex(config: DocflowConfig, slug: string): voi
     '- Claim work → docflow_task (claim, "exact task text")',
     "- Done → docflow_task (done)",
     '- Blocked → docflow_task (block, "reason")',
+    "- Session activity is tracked in [[Sessions.md]] as a Kanban board",
     "",
   ];
 
@@ -111,7 +136,7 @@ export function ensureProjectDocs(config: DocflowConfig, slug: string): void {
     );
   }
   if (!hasExistingFiles || !readdirSync(base).includes("Sessions.md")) {
-    writeDoc(config, slug, "Sessions.md", "# Sessions\n\n## Active\n\n## Idle\n\n## Stale\n\n## Ended\n\n");
+    writeDoc(config, slug, "Sessions.md", SESSION_KANBAN_TEMPLATE);
   }
   if (!hasExistingFiles || !readdirSync(base).includes("_Context.md")) {
     regenerateContextIndex(config, slug);

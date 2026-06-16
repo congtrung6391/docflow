@@ -48,6 +48,13 @@ const BACKGROUND_MAP: Record<string, string> = {
   teal: "#cffbff",
   gray: "#f0f0f0",
   light: "#ffffff",
+  "light blue": "#ddf4ff",
+  "light green": "#def7ec",
+  "light red": "#ffe6e6",
+  "light orange": "#fff3d6",
+  "light purple": "#ebd9fe",
+  "light teal": "#cffbff",
+  "light gray": "#f0f0f0",
 } as const;
 
 const STROKE_WIDTH_MAP: Record<string, number> = {
@@ -62,33 +69,137 @@ const STROKE_WIDTH_MAP: Record<string, number> = {
 // ────────────────────────────────────────────────────────────────────────────
 
 interface LayoutElement {
-  x: number;
-  y: number;
+  x?: number;
+  y?: number;
   w: number;
   h: number;
   label: string;
-  index: number;
+  type?: string;
 }
 
-function autoLayout(elements: { x?: number; y?: number; label?: string; type?: string }[], canvasSize: number = 1200): { x: number; y: number }[] {
-  // If all elements have positions, return as-is
-  const hasPositions = elements.every((e) => e.x !== undefined && e.y !== undefined);
-  if (hasPositions) return elements.map((e) => ({ x: e.x!, y: e.y! }));
+function estimateSize(element: { label?: string; type?: string; width?: number; height?: number }): { width: number; height: number } {
+  if (element.type === "frame") {
+    return { width: element.width || 360, height: element.height || 260 };
+  }
 
-  // Simple grid auto-layout
+  const lines = (element.label || "").split("\n");
+  const longest = Math.max(8, ...lines.map((line) => line.length));
+  const estimatedWidth = Math.min(360, Math.max(160, longest * 8 + 32));
+  const estimatedHeight = Math.max(60, lines.length * 24 + 28);
+
+  return {
+    width: Math.max(element.width || 0, estimatedWidth),
+    height: Math.max(element.height || 0, estimatedHeight),
+  };
+}
+
+function boxesOverlap(a: Required<LayoutElement>, b: Required<LayoutElement>, gap = 32): boolean {
+  return !(
+    a.x + a.w + gap < b.x ||
+    b.x + b.w + gap < a.x ||
+    a.y + a.h + gap < b.y ||
+    b.y + b.h + gap < a.y
+  );
+}
+
+function relaxOverlaps(items: Required<LayoutElement>[], canvasSize: number): void {
+  const movable = items.filter((item) => item.type !== "frame");
+  for (let pass = 0; pass < 80; pass++) {
+    let moved = false;
+    for (let i = 0; i < movable.length; i++) {
+      for (let j = i + 1; j < movable.length; j++) {
+        const a = movable[i];
+        const b = movable[j];
+        if (!boxesOverlap(a, b)) continue;
+
+        moved = true;
+        if (Math.abs(a.x - b.x) < Math.abs(a.y - b.y)) {
+          b.x = Math.min(canvasSize - b.w - 40, b.x + 80);
+        } else {
+          b.y += 70;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+}
+
+function autoLayout(
+  elements: LayoutElement[],
+  canvasSize: number = 1200,
+  arrows: { from: string; to: string }[] = []
+): { x: number; y: number }[] {
   const n = elements.length;
   if (n === 0) return [];
 
-  const cols = Math.ceil(Math.sqrt(n));
-  const rows = Math.ceil(n / cols);
-  const spacing = 160;
-  const startX = canvasSize / 2 - (cols * spacing) / 2;
-  const startY = 80;
+  const hasAllPositions = elements.every((e) => e.x !== undefined && e.y !== undefined);
+  if (hasAllPositions) {
+    const items = elements.map((e) => ({ ...e, x: e.x!, y: e.y! })) as Required<LayoutElement>[];
+    relaxOverlaps(items, canvasSize);
+    return items.map((item) => ({ x: item.x, y: item.y }));
+  }
 
-  return elements.map((_, i) => ({
-    x: startX + ((i % cols) * spacing),
-    y: startY + (Math.floor(i / cols) * spacing),
-  }));
+  const byLabel = new Map(elements.map((e, i) => [e.label, i]));
+  const incoming = new Map<number, number[]>();
+  const outgoing = new Map<number, number[]>();
+
+  for (const arrow of arrows) {
+    const from = byLabel.get(arrow.from);
+    const to = byLabel.get(arrow.to);
+    if (from === undefined || to === undefined) continue;
+    outgoing.set(from, [...(outgoing.get(from) || []), to]);
+    incoming.set(to, [...(incoming.get(to) || []), from]);
+  }
+
+  const ranks = new Array(n).fill(0);
+  for (let pass = 0; pass < n; pass++) {
+    let changed = false;
+    for (const [from, tos] of outgoing.entries()) {
+      for (const to of tos) {
+        if (ranks[to] <= ranks[from]) {
+          ranks[to] = ranks[from] + 1;
+          changed = true;
+        }
+      }
+    }
+    if (!changed) break;
+  }
+
+  // If no graph information exists, use a spacious grid.
+  if (outgoing.size === 0 && incoming.size === 0) {
+    const cols = Math.ceil(Math.sqrt(n));
+    const colWidth = 300;
+    const rowHeight = 170;
+    const startX = Math.max(80, canvasSize / 2 - ((cols - 1) * colWidth) / 2);
+    const items = elements.map((e, i) => ({
+      ...e,
+      x: e.x ?? startX + ((i % cols) * colWidth),
+      y: e.y ?? 100 + (Math.floor(i / cols) * rowHeight),
+    })) as Required<LayoutElement>[];
+    relaxOverlaps(items, canvasSize);
+    return items.map((item) => ({ x: item.x, y: item.y }));
+  }
+
+  const columns = new Map<number, number[]>();
+  ranks.forEach((rank, i) => columns.set(rank, [...(columns.get(rank) || []), i]));
+
+  const colWidth = 340;
+  const startX = 80;
+  const items = elements.map((e, i) => {
+    const rank = ranks[i];
+    const col = columns.get(rank) || [];
+    const row = col.indexOf(i);
+    const maxRows = Math.max(...Array.from(columns.values()).map((c) => c.length));
+    const rowHeight = Math.max(150, Math.floor((canvasSize * 0.55) / Math.max(1, maxRows)));
+    return {
+      ...e,
+      x: e.x ?? startX + rank * colWidth,
+      y: e.y ?? 100 + row * rowHeight,
+    } as Required<LayoutElement>;
+  });
+
+  relaxOverlaps(items, Math.max(canvasSize, startX + (Math.max(...ranks) + 1) * colWidth + 420));
+  return items.map((item) => ({ x: item.x, y: item.y }));
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -124,22 +235,28 @@ function createExcalidrawElement(
     roundness: type !== "line" ? { type: 2 } : null,
     boundElements: null,
     locked: false,
+    seed: Math.floor(Math.random() * 2 ** 31),
+    version: 1,
+    versionNonce: Math.floor(Math.random() * 2 ** 31),
+    isDeleted: false,
+    updated: Date.now(),
+    link: null,
+    customData: null,
   };
 
-  if (type === "text" || type === "frame") {
+  if (type === "text") {
     base.text = label;
+    base.originalText = label;
     base.fontSize = style.fontSize || 20;
-    base.font = style.font || "sans";
+    base.fontFamily = 1;
     base.fontWeight = style.fontWeight || 400;
     base.textAlign = "center";
     base.verticalAlign = "middle";
-  } else {
-    base.text = label;
-    base.fontSize = style.fontSize || 16;
-    base.font = style.font || "sans";
-    base.fontWeight = style.fontWeight || 400;
-    base.textAlign = "center";
-    base.verticalAlign = "middle";
+    base.baseline = Math.round((style.fontSize as number | undefined) || 20);
+    base.lineHeight = 1.25;
+    base.containerId = null;
+  } else if (type === "frame") {
+    base.name = label;
   }
 
   if (type === "arrow" || type === "connector") {
@@ -196,8 +313,45 @@ function createArrowElement(
       [0, 0],
       [x2 - x1, y2 - y1],
     ],
-    label: label || "",
+    seed: Math.floor(Math.random() * 2 ** 31),
+    version: 1,
+    versionNonce: Math.floor(Math.random() * 2 ** 31),
+    isDeleted: false,
+    updated: Date.now(),
+    link: null,
+    customData: null,
   };
+}
+
+function createTextElement(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  text: string,
+  style: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return createExcalidrawElement("text", x, y, width, height, text, {
+    strokeColor: style.strokeColor || COLOR_MAP.black,
+    backgroundColor: "transparent",
+    fontSize: style.fontSize || 16,
+    fontWeight: style.fontWeight || 400,
+  });
+}
+
+function buildObsidianExcalidrawMarkdown(scene: string): string {
+  let textElements = "";
+  try {
+    const parsed = JSON.parse(scene) as { elements?: Array<{ type?: string; text?: string; id?: string }> };
+    textElements = (parsed.elements || [])
+      .filter((el) => el.type === "text" && el.text)
+      .map((el) => `${el.text} ^${(el.id || "").replace(/[^a-zA-Z0-9]/g, "").slice(0, 8)}`)
+      .join("\n\n");
+  } catch {
+    textElements = "";
+  }
+
+  return `---\nexcalidraw-plugin: parsed\ntags: [excalidraw]\n---\n\n==⚠  Switch to EXCALIDRAW VIEW in Obsidian. This file is generated by docflow.==\n\n# Excalidraw Data\n\n## Text Elements\n${textElements}\n\n## Drawing\n\`\`\`json\n${scene}\n\`\`\`\n`;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -216,7 +370,7 @@ function buildExcalidrawScene(
     source: "docflow",
     appState: {
       zoom: { value: 1 },
-      viewBackgroundColor: "ffffff",
+      viewBackgroundColor: "#ffffff",
       gridSize: 20,
       gridStep: 20,
       gridModeEnabled: true,
@@ -522,35 +676,45 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
     ],
     async execute(_toolCallId, params) {
       const slug = params.project || "_unassigned";
-      const filePath = params.filePath || resolveProjectPath(slug, "/<slug>/diagrams/_Sketch.md") || `${slug}/diagrams/_Sketch.md`;
+      const filePath = params.filePath || resolveProjectPath(slug, "<slug>/diagrams/_Sketch.excalidraw.md") || `${slug}/diagrams/_Sketch.excalidraw.md`;
 
       // Parse elements
       const elements: Record<string, unknown>[] = [];
       const labeledElements: Record<string, Record<string, unknown>> = {};
 
       if (params.elements) {
-        const positions = autoLayout(
-          params.elements.map((e) => ({
+        const sizedElements = params.elements.map((e) => {
+          const size = estimateSize(e);
+          return {
             x: e.x,
             y: e.y,
+            w: size.width,
+            h: size.height,
             label: e.label,
             type: e.type,
-          })),
-          params.canvasSize || 1200
+          };
+        });
+        const positions = autoLayout(
+          sizedElements,
+          params.canvasSize || 1200,
+          params.arrows || []
         );
 
         params.elements.forEach((e, i) => {
           const pos = positions[i];
+          const size = sizedElements[i];
           const excalidrawType = SHAPE_MAP[e.type] || "rectangle";
           const strokeColor = COLOR_MAP[e.strokeColor || ""] || e.strokeColor || COLOR_MAP.blue;
-          const bgColor = COLOR_MAP[e.backgroundColor || ""] || e.backgroundColor || BACKGROUND_MAP.light;
+          const bgColor = BACKGROUND_MAP[e.backgroundColor || ""] || e.backgroundColor || BACKGROUND_MAP.light;
 
+          const width = size.w;
+          const height = size.h;
           const el = createExcalidrawElement(
             excalidrawType,
             pos.x,
             pos.y,
-            e.width || 160,
-            e.height || 60,
+            width,
+            height,
             e.label,
             {
               strokeColor,
@@ -562,6 +726,12 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
           );
 
           elements.push(el);
+          if (excalidrawType !== "text" && excalidrawType !== "frame" && e.label) {
+            elements.push(createTextElement(pos.x + 8, pos.y + Math.max(8, height / 2 - 14), Math.max(20, width - 16), 28, e.label, {
+              fontSize: e.fontSize || 16,
+              fontWeight: e.fontWeight || 400,
+            }));
+          }
           labeledElements[e.label] = el;
         });
       }
@@ -594,6 +764,16 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
               }
             );
             elements.push(arrowEl);
+            if (arrow.label) {
+              elements.push(createTextElement(
+                (fromX + fromW / 2 + toX + toW / 2) / 2 - 50,
+                (fromY + fromH / 2 + toY + toH / 2) / 2 - 16,
+                100,
+                24,
+                arrow.label,
+                { fontSize: 13, strokeColor: COLOR_MAP.gray }
+              ));
+            }
           }
         });
       }
@@ -601,19 +781,16 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
       // Build scene
       const scene = buildExcalidrawScene(elements, params.title || "Untitled", params.canvasSize || 1600, params.canvasSize ? params.canvasSize * 0.5625 : 900);
 
-      // Write as Excalidraw JSON
       ensureDir(dirname(filePath));
-      writeFileSync(filePath, scene, "utf-8");
-
-      // Also write a Markdown wrapper so Obsidian renders the diagram
-      const mdPath = filePath.replace(/\.json$/, ".md");
-      const wrapper = `## ${params.title || "Diagram"}\n\n![Diagram](${basename(filePath).replace(/\.\w+$/, "")})\n\n${params.description ? `\n> ${params.description}\n` : ""}`;
-      writeFileSync(mdPath, wrapper, "utf-8");
-
-      // Create Excalidraw embed file
-      const embedPath = filePath.replace(/\.json$/, ".excalidraw");
-      const embed = `%%EXCALIDRAW%%\n${JSON.parse(scene).elements.length} elements\n${scene}`;
-      writeFileSync(embedPath, embed, "utf-8");
+      if (filePath.endsWith(".excalidraw.md")) {
+        writeFileSync(filePath, buildObsidianExcalidrawMarkdown(scene), "utf-8");
+        writeFileSync(filePath.replace(/\.excalidraw\.md$/, ".json"), scene, "utf-8");
+      } else {
+        // Raw Excalidraw JSON, importable by excalidraw.com and compatible tools.
+        writeFileSync(filePath, scene, "utf-8");
+        // Obsidian Excalidraw plugin format.
+        writeFileSync(filePath.replace(/\.(json|excalidraw)$/, ".excalidraw.md"), buildObsidianExcalidrawMarkdown(scene), "utf-8");
+      }
 
       return {
         content: [

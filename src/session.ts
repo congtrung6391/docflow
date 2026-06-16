@@ -24,40 +24,66 @@ export function createSessionCard(sessionId: string, cwd: string): SessionCard {
   };
 }
 
-export function updateSessionInMarkdown(config: DocflowConfig, card: SessionCard): void {
-  if (card.project === "_unassigned") return;
+export const SESSION_KANBAN_TEMPLATE = `---
+kanban-plugin: board
+---
 
-  const content = safeRead(getProjectPath(config, card.project, "<slug>/Sessions.md")!);
-  const lines = content ? content.split("\n") : [];
+# Sessions
 
-  let found = false;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes(card.id)) {
-      lines[i] = `- **${shortenId(card.id, 5)}**`;
-      if (card.project !== "_unassigned") lines[i] += ` [${card.project}]`;
-      if (card.claimedTask) lines[i] += ` → ${card.claimedTask}`;
-      lines[i] += ` | ${minutesAgo(card.lastActivity)}m ago`;
-      found = true;
-      break;
+## Active
+
+## Idle
+
+## Stale
+
+## Ended
+
+`;
+
+function ensureSessionKanbanBoard(content: string | null): string[] {
+  let md = content?.trimEnd() || SESSION_KANBAN_TEMPLATE.trimEnd();
+
+  if (!md.startsWith("---\nkanban-plugin: board\n---")) {
+    md = `---\nkanban-plugin: board\n---\n\n${md}`;
+  }
+
+  for (const column of ["Active", "Idle", "Stale", "Ended"]) {
+    if (!md.match(new RegExp(`^## ${column}$`, "m"))) {
+      md += `\n\n## ${column}\n`;
     }
   }
 
-  if (!found) {
-    const status = card.status === "ended" ? "Ended" : card.status;
-    const headerIdx = lines.findIndex((l) => l === `## ${status}`);
-    const insertAt = headerIdx >= 0 ? headerIdx + 1 : lines.length;
+  return md.split("\n");
+}
 
-    let line = `- **${shortenId(card.id, 5)}**`;
-    if (card.project !== "_unassigned") line += ` [${card.project}]`;
-    if (card.claimedTask) line += ` → ${card.claimedTask}`;
-    line += ` | ${minutesAgo(card.lastActivity)}m ago`;
+function sessionStatusColumn(status: SessionCard["status"]): string {
+  return status.slice(0, 1).toUpperCase() + status.slice(1);
+}
 
-    lines.splice(insertAt, 0, line);
-  }
+export function updateSessionInMarkdown(config: DocflowConfig, card: SessionCard): void {
+  if (card.project === "_unassigned") return;
 
   const path = getProjectPath(config, card.project, "<slug>/Sessions.md");
-  if (path) {
-    ensureDir(dirname(path));
-    writeFileSync(path, lines.join("\n"), "utf-8");
+  if (!path) return;
+
+  const shortId = shortenId(card.id, 5);
+  const content = safeRead(path);
+  const lines = ensureSessionKanbanBoard(content).filter((line) => !line.includes(`**${shortId}**`));
+
+  const status = sessionStatusColumn(card.status);
+  let headerIdx = lines.findIndex((l) => l === `## ${status}`);
+  if (headerIdx < 0) {
+    lines.push("", `## ${status}`, "");
+    headerIdx = lines.findIndex((l) => l === `## ${status}`);
   }
+
+  let line = `- [ ] **${shortId}**`;
+  if (card.project !== "_unassigned") line += ` [${card.project}]`;
+  if (card.claimedTask) line += ` → ${card.claimedTask}`;
+  line += ` | ${minutesAgo(card.lastActivity)}m ago`;
+
+  lines.splice(headerIdx + 1, 0, line);
+
+  ensureDir(dirname(path));
+  writeFileSync(path, lines.join("\n") + "\n", "utf-8");
 }
