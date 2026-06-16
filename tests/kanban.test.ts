@@ -5,7 +5,66 @@ import {
   getNextTaskId,
   rebuildKanban,
 } from "../src/kanban";
+import {
+  KANBAN_FRONTMATTER,
+  stripLeadingFrontmatter,
+  normalizeKanbanBoard,
+  hasCanonicalKanbanFrontmatter,
+} from "../src/utils";
+import { SESSION_KANBAN_TEMPLATE } from "../src/session";
 import type { DocflowConfig } from "../src/types";
+
+describe("kanban frontmatter (Obsidian Kanban plugin recognition)", () => {
+  it("generateKanbanMarkdown opens with the canonical frontmatter, no blank line", () => {
+    const md = generateKanbanMarkdown({ Backlog: [], Doing: [], Blocked: [], Done: [], Archive: [] }, true);
+    expect(md.startsWith("---\nkanban-plugin: board\n---\n")).toBe(true);
+    expect(md.startsWith(`${KANBAN_FRONTMATTER}\n`)).toBe(true);
+    // the specific bug: a blank line between `---` and the key
+    expect(md.startsWith("---\n\n")).toBe(false);
+  });
+
+  it("SESSION_KANBAN_TEMPLATE opens with the canonical frontmatter", () => {
+    expect(SESSION_KANBAN_TEMPLATE.startsWith(`${KANBAN_FRONTMATTER}\n`)).toBe(true);
+    expect(hasCanonicalKanbanFrontmatter(SESSION_KANBAN_TEMPLATE)).toBe(true);
+  });
+
+  it("repairs the blank-line-after-fence form", () => {
+    const broken = "---\n\nkanban-plugin: board\n\n---\n\n# Tasks · frai-rf\n\n## Backlog\n\n- [ ] keep me\n";
+    expect(hasCanonicalKanbanFrontmatter(broken)).toBe(false);
+    const fixed = normalizeKanbanBoard(broken);
+    expect(fixed.startsWith(`${KANBAN_FRONTMATTER}\n\n`)).toBe(true);
+    expect(hasCanonicalKanbanFrontmatter(fixed)).toBe(true);
+    expect(fixed).toContain("# Tasks · frai-rf");
+    expect(fixed).toContain("- [ ] keep me"); // body preserved
+    expect(fixed.match(/kanban-plugin: board/g)?.length).toBe(1); // exactly one
+  });
+
+  it("collapses a duplicated frontmatter block into one", () => {
+    const doubled = `${KANBAN_FRONTMATTER}\n\n---\n\nkanban-plugin: board\n\n---\n\n# Sessions\n\n## Active\n`;
+    const fixed = normalizeKanbanBoard(doubled);
+    expect(fixed.match(/^---$/gm)?.length).toBe(2); // one opening, one closing
+    expect(fixed.match(/kanban-plugin: board/g)?.length).toBe(1);
+    expect(fixed).toContain("# Sessions");
+  });
+
+  it("handles CRLF frontmatter", () => {
+    const crlf = "---\r\n\r\nkanban-plugin: board\r\n\r\n---\r\n\r\n# Tasks\r\n";
+    const fixed = normalizeKanbanBoard(crlf);
+    expect(fixed.startsWith(`${KANBAN_FRONTMATTER}\n\n`)).toBe(true);
+    expect(fixed).toContain("# Tasks");
+  });
+
+  it("stripLeadingFrontmatter leaves body without frontmatter untouched", () => {
+    const body = "# Tasks\n\n## Backlog\n";
+    expect(stripLeadingFrontmatter(body)).toBe(body);
+  });
+
+  it("a board with no frontmatter at all gains it", () => {
+    const noFm = "# Tasks\n\n## Backlog\n\n- [ ] task\n";
+    expect(hasCanonicalKanbanFrontmatter(noFm)).toBe(false);
+    expect(hasCanonicalKanbanFrontmatter(normalizeKanbanBoard(noFm))).toBe(true);
+  });
+});
 
 describe("kanban", () => {
   describe("generateKanbanMarkdown", () => {

@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { DocflowConfig, SessionCard } from "./types";
-import { getProjectPath, ensureDir, shortenId, minutesAgo, safeRead } from "./utils";
+import { getProjectPath, ensureDir, shortenId, minutesAgo, safeRead, KANBAN_FRONTMATTER, stripLeadingFrontmatter } from "./utils";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Session Management
@@ -24,9 +24,7 @@ export function createSessionCard(sessionId: string, cwd: string): SessionCard {
   };
 }
 
-export const SESSION_KANBAN_TEMPLATE = `---
-kanban-plugin: board
----
+export const SESSION_KANBAN_TEMPLATE = `${KANBAN_FRONTMATTER}
 
 # Sessions
 
@@ -40,20 +38,21 @@ kanban-plugin: board
 
 `;
 
+// Returns the board lines with canonical frontmatter guaranteed. Strips any
+// existing (possibly malformed or duplicated) frontmatter first, then re-adds
+// the canonical block — so editing a legacy board repairs it instead of
+// stacking a second frontmatter on top.
 function ensureSessionKanbanBoard(content: string | null): string[] {
-  let md = content?.trimEnd() || SESSION_KANBAN_TEMPLATE.trimEnd();
-
-  if (!md.startsWith("---\nkanban-plugin: board\n---")) {
-    md = `---\nkanban-plugin: board\n---\n\n${md}`;
-  }
+  let body = stripLeadingFrontmatter((content ?? "").trim()).trim();
+  if (!body) body = "# Sessions";
 
   for (const column of ["Active", "Idle", "Stale", "Ended"]) {
-    if (!md.match(new RegExp(`^## ${column}$`, "m"))) {
-      md += `\n\n## ${column}\n`;
+    if (!body.match(new RegExp(`^## ${column}$`, "m"))) {
+      body += `\n\n## ${column}`;
     }
   }
 
-  return md.split("\n");
+  return `${KANBAN_FRONTMATTER}\n\n${body}`.split("\n");
 }
 
 function sessionStatusColumn(status: SessionCard["status"]): string {

@@ -66,7 +66,7 @@ describe("session", () => {
       try {
         updateSessionInMarkdown(config, card);
 
-        const sessionFile = path.join(tmpDir, "docflow", "myproject", "Sessions.md");
+        const sessionFile = path.join(tmpDir, "myproject", "Sessions.md");
         expect(fs.existsSync(sessionFile)).toBe(true);
 
         const content = fs.readFileSync(sessionFile, "utf-8");
@@ -101,7 +101,7 @@ describe("session", () => {
       try {
         updateSessionInMarkdown(config, card);
 
-        const sessionFile = path.join(tmpDir, "docflow", "newproject", "Sessions.md");
+        const sessionFile = path.join(tmpDir, "newproject", "Sessions.md");
         expect(fs.existsSync(sessionFile)).toBe(true);
       } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });

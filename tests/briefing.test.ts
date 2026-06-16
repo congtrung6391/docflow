@@ -33,7 +33,7 @@ describe("briefing", () => {
     });
 
     it("includes plan content in briefing", () => {
-      const planPath = path.join(tmpDir, "docflow", "bp", "Plan.md");
+      const planPath = path.join(tmpDir, "bp", "Plan.md");
       fs.mkdirSync(path.dirname(planPath), { recursive: true });
       fs.writeFileSync(planPath, "# Plan\n\nThis is the project plan.\n\n## Scope\n\nBuild a thing.");
 
@@ -54,7 +54,7 @@ describe("briefing", () => {
     });
 
     it("includes design content in briefing", () => {
-      const designPath = path.join(tmpDir, "docflow", "dp", "Design.md");
+      const designPath = path.join(tmpDir, "dp", "Design.md");
       fs.mkdirSync(path.dirname(designPath), { recursive: true });
       fs.writeFileSync(designPath, "# Design\n\nArchitecture decision: use SQLite.");
 
@@ -75,7 +75,7 @@ describe("briefing", () => {
     });
 
     it("includes decisions in briefing", () => {
-      const decisionsPath = path.join(tmpDir, "docflow", "dec", "Decisions.md");
+      const decisionsPath = path.join(tmpDir, "dec", "Decisions.md");
       fs.mkdirSync(path.dirname(decisionsPath), { recursive: true });
       fs.writeFileSync(decisionsPath, "# Decisions\n\n## 2025-01-01\n\nChose TypeScript.");
 
@@ -96,7 +96,7 @@ describe("briefing", () => {
     });
 
     it("limits content length per section", () => {
-      const planPath = path.join(tmpDir, "docflow", "lp", "Plan.md");
+      const planPath = path.join(tmpDir, "lp", "Plan.md");
       fs.mkdirSync(path.dirname(planPath), { recursive: true });
       // Write a very long plan
       const longContent = "# Plan\n\n" + "Line ".repeat(1000) + "more text.";
@@ -121,7 +121,7 @@ describe("briefing", () => {
 
   describe("ensureProjectDocs", () => {
     it("creates Tasks.md if it doesn't exist", () => {
-      const projectDir = path.join(tmpDir, "docflow", "epd");
+      const projectDir = path.join(tmpDir, "epd");
       fs.mkdirSync(projectDir, { recursive: true });
 
       const config: DocflowConfig = {
@@ -141,7 +141,7 @@ describe("briefing", () => {
     });
 
     it("creates Sessions.md if it doesn't exist", () => {
-      const projectDir = path.join(tmpDir, "docflow", "sp");
+      const projectDir = path.join(tmpDir, "sp");
       fs.mkdirSync(projectDir, { recursive: true });
 
       const config: DocflowConfig = {
@@ -161,7 +161,7 @@ describe("briefing", () => {
     });
 
     it("creates _Context.md if it doesn't exist", () => {
-      const projectDir = path.join(tmpDir, "docflow", "cp");
+      const projectDir = path.join(tmpDir, "cp");
       fs.mkdirSync(projectDir, { recursive: true });
 
       const config: DocflowConfig = {
@@ -181,7 +181,7 @@ describe("briefing", () => {
     });
 
     it("creates Decisions.md if it doesn't exist", () => {
-      const projectDir = path.join(tmpDir, "docflow", "dp");
+      const projectDir = path.join(tmpDir, "dp");
       fs.mkdirSync(projectDir, { recursive: true });
 
       const config: DocflowConfig = {
@@ -201,7 +201,7 @@ describe("briefing", () => {
     });
 
     it("does not overwrite existing Tasks.md", () => {
-      const projectDir = path.join(tmpDir, "docflow", "nop");
+      const projectDir = path.join(tmpDir, "nop");
       fs.mkdirSync(projectDir, { recursive: true });
       fs.writeFileSync(path.join(projectDir, "Tasks.md"), "# Custom Tasks\n\n- [ ] My custom task");
 

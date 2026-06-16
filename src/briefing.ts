@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import type { DocflowConfig } from "./types";
 import { generateKanbanMarkdown } from "./kanban";
 import { SESSION_KANBAN_TEMPLATE } from "./session";
-import { getProjectPath, safeRead, nowISO, ensureDir, writeDoc } from "./utils";
+import { getProjectPath, safeRead, nowISO, ensureDir, writeDoc, normalizeKanbanBoard, hasCanonicalKanbanFrontmatter } from "./utils";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Briefing & Context
@@ -143,5 +143,15 @@ export function ensureProjectDocs(config: DocflowConfig, slug: string): void {
   }
   if (!hasExistingFiles || !readdirSync(base).includes("Decisions.md")) {
     writeDoc(config, slug, "Decisions.md", "# Decision Log\n\n_No decisions yet._\n");
+  }
+
+  // Repair legacy boards whose frontmatter the Obsidian Kanban plugin won't
+  // recognize (blank line after `---`, or a duplicated frontmatter block).
+  for (const doc of ["Tasks.md", "Sessions.md"]) {
+    const docPath = getProjectPath(config, slug, `<slug>/${doc}`);
+    const existing = docPath ? safeRead(docPath) : null;
+    if (existing && !hasCanonicalKanbanFrontmatter(existing)) {
+      writeDoc(config, slug, doc, normalizeKanbanBoard(existing));
+    }
   }
 }

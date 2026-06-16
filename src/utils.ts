@@ -34,6 +34,39 @@ export function shortenId(id: string, length = 5): string {
   return id.replace(/[^a-zA-Z0-9]/g, "").slice(0, length);
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Kanban frontmatter
+//
+// The Obsidian Kanban plugin only recognizes a board when the file opens with
+// EXACTLY this frontmatter — the opening `---` immediately followed by the
+// `kanban-plugin` key. A blank line wedged in between (an older docflow bug) or
+// a duplicated block makes the plugin render the file as a plain note.
+// ────────────────────────────────────────────────────────────────────────────
+
+export const KANBAN_FRONTMATTER = "---\nkanban-plugin: board\n---";
+
+// Remove any leading YAML frontmatter block(s), tolerant of blank lines and CRLF.
+export function stripLeadingFrontmatter(content: string): string {
+  let s = content.replace(/^﻿/, "");
+  const block = /^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n?/;
+  while (block.test(s)) {
+    s = s.replace(block, "");
+    s = s.replace(/^(?:[ \t]*\r?\n)+/, ""); // drop blank lines left behind
+  }
+  return s;
+}
+
+// True when the content already starts with the canonical board frontmatter.
+export function hasCanonicalKanbanFrontmatter(content: string): boolean {
+  return content.startsWith(`${KANBAN_FRONTMATTER}\n`) || content.trimEnd() === KANBAN_FRONTMATTER;
+}
+
+// Re-emit a board with canonical frontmatter, preserving the body verbatim.
+export function normalizeKanbanBoard(content: string): string {
+  const body = stripLeadingFrontmatter(content).replace(/^\s+/, "");
+  return `${KANBAN_FRONTMATTER}\n\n${body}`;
+}
+
 export function safeRead(path: string): string | null {
   try {
     return existsSync(path) ? readFileSync(path, "utf-8") : null;
