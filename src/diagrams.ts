@@ -3,6 +3,26 @@
  *
  * AI describes diagrams in simple English. The tool generates valid JSON.
  * AI never touches raw Excalidraw format.
+ *
+ * Excalidraw engine notes
+ * ───────────────────────
+ * The scene is generated to look like something drawn by hand on excalidraw.com:
+ *
+ *   1. Bound text   — box labels are real Excalidraw "bound text" (`containerId` +
+ *                     the container's `boundElements`). Excalidraw centres, wraps
+ *                     and clips them automatically, so labels never spill out.
+ *   2. Bound arrows — arrows carry `startBinding`/`endBinding` (`{elementId,focus,
+ *                     gap}`) and are registered in each endpoint's `boundElements`.
+ *                     Excalidraw clips them to the box edge, so arrowheads stop at
+ *                     the border instead of landing on the text inside.
+ *   3. Layout       — a Sugiyama-style layered layout (assign layers → reduce
+ *                     crossings by barycenter ordering → size-aware coordinate
+ *                     assignment). This removes the overlapping boxes and the
+ *                     long crossing diagonals that a naive grid produces.
+ *
+ * Output targets the Obsidian Excalidraw plugin (`excalidraw-plugin: parsed`),
+ * not the standalone web app — element ids are Obsidian `^block-ref` safe and the
+ * drawing JSON is wrapped in a `%%` comment block like the plugin writes.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -16,7 +36,6 @@ import { dirname, basename } from "node:path";
 // ────────────────────────────────────────────────────────────────────────────
 
 type Shape = "box" | "circle" | "diamond" | "text" | "note" | "image" | "frame";
-type Arrow = "arrow" | "line" | "connector";
 
 const SHAPE_MAP: Record<string, string> = {
   box: "rectangle",
@@ -29,94 +48,487 @@ const SHAPE_MAP: Record<string, string> = {
 };
 
 const COLOR_MAP: Record<string, string> = {
-  blue: "#1b73e8",
-  green: "#36b37e",
-  red: "#ff4854",
-  orange: "#ffb800",
-  purple: "#784be3",
-  teal: "#00b4d8",
-  gray: "#6e6e6e",
-  black: "#000000",
+  blue: "#1971c2",
+  green: "#2f9e44",
+  red: "#e03131",
+  orange: "#f08c00",
+  purple: "#7048e8",
+  teal: "#0c8599",
+  yellow: "#f08c00",
+  gray: "#495057",
+  grey: "#495057",
+  black: "#1e1e1e",
 } as const;
 
 const BACKGROUND_MAP: Record<string, string> = {
-  blue: "#ddf4ff",
-  green: "#def7ec",
-  red: "#ffe6e6",
-  orange: "#fff3d6",
-  purple: "#ebd9fe",
-  teal: "#cffbff",
-  gray: "#f0f0f0",
+  blue: "#a5d8ff",
+  green: "#b2f2bb",
+  red: "#ffc9c9",
+  orange: "#ffec99",
+  yellow: "#ffec99",
+  purple: "#d0bfff",
+  teal: "#99e9f2",
+  gray: "#e9ecef",
+  grey: "#e9ecef",
   light: "#ffffff",
-  "light blue": "#ddf4ff",
-  "light green": "#def7ec",
-  "light red": "#ffe6e6",
-  "light orange": "#fff3d6",
-  "light purple": "#ebd9fe",
-  "light teal": "#cffbff",
-  "light gray": "#f0f0f0",
+  white: "#ffffff",
+  none: "transparent",
+  transparent: "transparent",
+  "light blue": "#a5d8ff",
+  "light green": "#b2f2bb",
+  "light red": "#ffc9c9",
+  "light orange": "#ffec99",
+  "light purple": "#d0bfff",
+  "light teal": "#99e9f2",
+  "light gray": "#e9ecef",
 } as const;
 
-const STROKE_WIDTH_MAP: Record<string, number> = {
-  "1": 1,
-  "2": 2,
-  "3": 3,
-  "4": 4,
-};
+// Excalidraw frame background — a faint tint so groups read as containers.
+const FRAME_FILL = "#f8f9fa";
 
 // ────────────────────────────────────────────────────────────────────────────
-// Helper: auto-layout calculator
+// Ids — alphanumeric so they are valid Excalidraw ids AND Obsidian ^block-refs
 // ────────────────────────────────────────────────────────────────────────────
 
-interface LayoutElement {
-  x?: number;
-  y?: number;
+const ID_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+function genId(): string {
+  // Start with a letter; Obsidian block refs dislike a leading digit.
+  let s = ID_CHARS[Math.floor(Math.random() * 52)];
+  for (let i = 0; i < 9; i++) s += ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)];
+  return s;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Text measurement & sizing
+// ────────────────────────────────────────────────────────────────────────────
+
+function wrapText(text: string, maxChars = 28): string {
+  return text
+    .split("\n")
+    .flatMap((line) => {
+      if (line.length <= maxChars) return [line];
+      const words = line.split(/\s+/);
+      const lines: string[] = [];
+      let current = "";
+
+      for (const word of words) {
+        if (!current) {
+          current = word;
+        } else if (`${current} ${word}`.length <= maxChars) {
+          current = `${current} ${word}`;
+        } else {
+          lines.push(current);
+          current = word;
+        }
+      }
+      if (current) lines.push(current);
+      return lines;
+    })
+    .join("\n");
+}
+
+// Hand-drawn font (fontFamily 1, Virgil) is roughly this wide per char.
+const CHAR_W = 0.6;
+const LINE_H = 1.25;
+
+interface NodeSize {
   w: number;
   h: number;
-  label: string;
-  type?: string;
+  wrapped: string;
 }
 
-function estimateSize(element: { label?: string; type?: string; width?: number; height?: number }): { width: number; height: number } {
-  if (element.type === "frame") {
-    return { width: element.width || 360, height: element.height || 260 };
+function nodeSize(label: string, type: string, fontSize: number): NodeSize {
+  const fs = fontSize || 16;
+  const maxChars = type === "diamond" ? 16 : 24;
+  const wrapped = wrapText(label || "", maxChars);
+  const lines = wrapped.split("\n");
+  const longest = Math.max(1, ...lines.map((l) => l.length));
+
+  let w = Math.ceil(longest * fs * CHAR_W) + 44;
+  let h = Math.ceil(lines.length * fs * LINE_H) + 32;
+  w = Math.max(140, Math.min(380, w));
+  h = Math.max(60, h);
+
+  if (type === "diamond") {
+    // Text sits in the middle third of a diamond — needs extra room.
+    w = Math.ceil(w * 1.5);
+    h = Math.ceil(h * 1.7);
+  } else if (type === "circle") {
+    const d = Math.max(w, Math.ceil(h * 1.6));
+    w = d;
+    h = Math.ceil(d * 0.72);
   }
 
-  const lines = (element.label || "").split("\n");
-  const longest = Math.max(8, ...lines.map((line) => line.length));
-  const estimatedWidth = Math.min(360, Math.max(160, longest * 8 + 32));
-  const estimatedHeight = Math.max(60, lines.length * 24 + 28);
+  return { w, h, wrapped };
+}
 
-  return {
-    width: Math.max(element.width || 0, estimatedWidth),
-    height: Math.max(element.height || 0, estimatedHeight),
+// ────────────────────────────────────────────────────────────────────────────
+// Layout — Sugiyama-style layered layout
+//
+// Three classic phases (Sugiyama, Tagawa & Toda 1981):
+//   1. Layer assignment   — longest-path ranking of the DAG.
+//   2. Crossing reduction — order nodes within each layer by the barycenter
+//                           (average position) of their neighbours, swept up and
+//                           down a few times. This is what untangles the edges.
+//   3. Coordinate assign  — size-aware placement: each layer is a band sized to
+//                           its widest/tallest node; within a layer nodes are
+//                           pulled toward the barycenter of their neighbours and
+//                           then spread apart to remove overlaps.
+// ────────────────────────────────────────────────────────────────────────────
+
+interface LayoutNode {
+  w: number;
+  h: number;
+  frame?: string; // frame membership, used as a weak clustering bias
+}
+
+type Direction = "LR" | "TB";
+
+interface LayoutResult {
+  positions: { x: number; y: number }[];
+  direction: Direction;
+}
+
+const MARGIN = 80;
+const GAP_MAIN = 130; // gap between layers (along the flow direction)
+const GAP_CROSS = 48; // gap between siblings within a layer
+
+function layeredLayout(
+  nodes: LayoutNode[],
+  edges: Array<[number, number]>,
+  requested: Direction | "auto",
+  hasFrames: boolean
+): LayoutResult {
+  const n = nodes.length;
+  if (n === 0) return { positions: [], direction: requested === "auto" ? "LR" : requested };
+
+  const inc: number[][] = Array.from({ length: n }, () => []);
+  const out: number[][] = Array.from({ length: n }, () => []);
+  const ed = edges.filter(([a, b]) => a !== b && a >= 0 && b >= 0 && a < n && b < n);
+  for (const [a, b] of ed) {
+    out[a].push(b);
+    inc[b].push(a);
+  }
+
+  // ── Phase 1: longest-path layering (cycles broken by the pass cap) ──
+  const layer = new Array(n).fill(0);
+  for (let pass = 0; pass <= n; pass++) {
+    let changed = false;
+    for (const [a, b] of ed) {
+      if (layer[b] <= layer[a]) {
+        layer[b] = layer[a] + 1;
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  const maxLayer = Math.max(0, ...layer);
+
+  const layers: number[][] = Array.from({ length: maxLayer + 1 }, () => []);
+  for (let i = 0; i < n; i++) layers[layer[i]].push(i);
+
+  // ── Direction: explicit, else inferred from the graph's shape ──
+  const breadth = Math.max(1, ...layers.map((l) => l.length));
+  const depth = maxLayer + 1;
+  let direction: Direction;
+  if (requested === "LR" || requested === "TB") {
+    direction = requested;
+  } else if (hasFrames) {
+    direction = "LR"; // swimlane / architecture diagrams read left→right
+  } else if (breadth > depth) {
+    direction = "TB"; // wide & branching → hierarchy reads top→down
+  } else {
+    direction = "LR"; // long chains → lay the pipeline out horizontally
+  }
+
+  const mainSize = (i: number) => (direction === "LR" ? nodes[i].w : nodes[i].h);
+  const crossSize = (i: number) => (direction === "LR" ? nodes[i].h : nodes[i].w);
+
+  // ── Phase 2: crossing reduction via barycenter ordering ──
+  const order = new Array(n).fill(0);
+  layers.forEach((l) => {
+    l.sort((a, b) => a - b);
+    l.forEach((id, o) => (order[id] = o));
+  });
+
+  const barycenter = (id: number, refLayer: number): number => {
+    const neigh = (refLayer < layer[id] ? inc[id] : out[id]).filter((x) => layer[x] === refLayer);
+    if (neigh.length === 0) return order[id];
+    return neigh.reduce((s, x) => s + order[x], 0) / neigh.length;
   };
+
+  for (let sweep = 0; sweep < 8; sweep++) {
+    const apply = (L: number, ref: number) => {
+      if (ref < 0 || ref > maxLayer) return;
+      const keyed = layers[L].map((id) => ({ id, k: barycenter(id, ref) }));
+      keyed.sort((p, q) => p.k - q.k || order[p.id] - order[q.id]);
+      layers[L] = keyed.map((e) => e.id);
+      layers[L].forEach((id, o) => (order[id] = o));
+    };
+    for (let L = 1; L <= maxLayer; L++) apply(L, L - 1); // sweep down
+    for (let L = maxLayer - 1; L >= 0; L--) apply(L, L + 1); // sweep up
+  }
+
+  // ── Phase 3a: main-axis position of each layer (size-aware bands) ──
+  const layerMainSize = layers.map((l) => Math.max(0, ...l.map(mainSize)));
+  const layerMainStart: number[] = [];
+  let acc = MARGIN;
+  for (let L = 0; L <= maxLayer; L++) {
+    layerMainStart[L] = acc;
+    acc += layerMainSize[L] + GAP_MAIN;
+  }
+
+  // ── Phase 3b: cross-axis coordinates (barycenter pull + overlap removal) ──
+  const cross = new Array(n).fill(0);
+  for (let L = 0; L <= maxLayer; L++) {
+    let c = MARGIN;
+    for (const id of layers[L]) {
+      cross[id] = c + crossSize(id) / 2;
+      c += crossSize(id) + GAP_CROSS;
+    }
+  }
+
+  // Same-frame siblings attract weakly, so frames stay compact.
+  const frameSiblings: Map<string, number[]> = new Map();
+  if (hasFrames) {
+    for (let i = 0; i < n; i++) {
+      const f = nodes[i].frame;
+      if (!f) continue;
+      if (!frameSiblings.has(f)) frameSiblings.set(f, []);
+      frameSiblings.get(f)!.push(i);
+    }
+  }
+
+  for (let iter = 0; iter < 16; iter++) {
+    for (let L = 0; L <= maxLayer; L++) {
+      for (const id of layers[L]) {
+        const neigh = [...inc[id], ...out[id]];
+        let sum = 0;
+        let weight = 0;
+        for (const x of neigh) {
+          sum += cross[x];
+          weight += 1;
+        }
+        const sibs = nodes[id].frame ? frameSiblings.get(nodes[id].frame!) || [] : [];
+        for (const x of sibs) {
+          if (x === id) continue;
+          sum += cross[x] * 0.4;
+          weight += 0.4;
+        }
+        if (weight > 0) cross[id] = sum / weight;
+      }
+      // Re-establish order + minimum separation within the layer.
+      const ord = layers[L];
+      for (let k = 1; k < ord.length; k++) {
+        const min = cross[ord[k - 1]] + crossSize(ord[k - 1]) / 2 + GAP_CROSS + crossSize(ord[k]) / 2;
+        if (cross[ord[k]] < min) cross[ord[k]] = min;
+      }
+      for (let k = ord.length - 2; k >= 0; k--) {
+        const max = cross[ord[k + 1]] - crossSize(ord[k + 1]) / 2 - GAP_CROSS - crossSize(ord[k]) / 2;
+        if (cross[ord[k]] > max) cross[ord[k]] = max;
+      }
+    }
+  }
+
+  // Shift so the whole drawing starts at the margin.
+  let minCross = Infinity;
+  for (let i = 0; i < n; i++) minCross = Math.min(minCross, cross[i] - crossSize(i) / 2);
+  const shift = MARGIN - minCross;
+
+  const positions = nodes.map((_, i) => {
+    const mainStart = layerMainStart[layer[i]] + (layerMainSize[layer[i]] - mainSize(i)) / 2;
+    const crossTopLeft = cross[i] + shift - crossSize(i) / 2;
+    return direction === "LR"
+      ? { x: Math.round(mainStart), y: Math.round(crossTopLeft) }
+      : { x: Math.round(crossTopLeft), y: Math.round(mainStart) };
+  });
+
+  return { positions, direction };
 }
 
-function boxesOverlap(a: Required<LayoutElement>, b: Required<LayoutElement>, gap = 32): boolean {
-  return !(
-    a.x + a.w + gap < b.x ||
-    b.x + b.w + gap < a.x ||
-    a.y + a.h + gap < b.y ||
-    b.y + b.h + gap < a.y
-  );
+function gridLayout(nodes: LayoutNode[]): { x: number; y: number }[] {
+  const n = nodes.length;
+  if (n === 0) return [];
+  const cols = Math.ceil(Math.sqrt(n));
+  const cellW = Math.max(...nodes.map((nd) => nd.w)) + 60;
+  const cellH = Math.max(...nodes.map((nd) => nd.h)) + 60;
+  return nodes.map((nd, i) => ({
+    x: MARGIN + (i % cols) * cellW + (cellW - nd.w - 60) / 2,
+    y: MARGIN + Math.floor(i / cols) * cellH,
+  }));
 }
 
-function relaxOverlaps(items: Required<LayoutElement>[], canvasSize: number): void {
-  const movable = items.filter((item) => item.type !== "frame");
-  for (let pass = 0; pass < 80; pass++) {
+// Single line of nodes — a column (TB) or a row (LR). Used inside frames that
+// have no internal edges, so members stack neatly instead of fanning out.
+function stackLayout(nodes: LayoutNode[], dir: Direction): { x: number; y: number }[] {
+  const pos: { x: number; y: number }[] = [];
+  let cur = MARGIN;
+  if (dir === "TB") {
+    const maxW = Math.max(...nodes.map((n) => n.w));
+    for (const n of nodes) {
+      pos.push({ x: MARGIN + (maxW - n.w) / 2, y: cur });
+      cur += n.h + GAP_CROSS;
+    }
+  } else {
+    const maxH = Math.max(...nodes.map((n) => n.h));
+    for (const n of nodes) {
+      pos.push({ x: cur, y: MARGIN + (maxH - n.h) / 2 });
+      cur += n.w + GAP_CROSS;
+    }
+  }
+  return pos;
+}
+
+interface FrameRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface FramedLayout {
+  positions: { x: number; y: number }[];
+  frameRects: Map<string, FrameRect>;
+  direction: Direction;
+}
+
+// Two-level (clustered) layout for diagrams that use frames.
+//   1. Decide the top-level flow direction from the *frame* graph.
+//   2. Lay out each frame's members locally (perpendicular to the top flow, so
+//      frames read as stacked columns / rows like swimlanes).
+//   3. Treat each frame as a super-node and lay the frames out with the same
+//      layered algorithm. Frame bands never overlap, so members never collide
+//      across frames — and each member stays inside its own frame.
+function layoutWithFrames(
+  nodes: LayoutNode[],
+  edges: Array<[number, number]>,
+  requested: Direction | "auto"
+): FramedLayout {
+  const n = nodes.length;
+  const PAD = 28;
+  const HEADER = 30; // space at the top of a frame for its name
+
+  // Group nodes by frame; un-framed nodes become their own singleton group.
+  const groupKey = nodes.map((nd, i) => nd.frame || `__free_${i}`);
+  const keys = [...new Set(groupKey)];
+  const members = new Map<string, number[]>();
+  keys.forEach((k) => members.set(k, []));
+  for (let i = 0; i < n; i++) members.get(groupKey[i])!.push(i);
+
+  const groupIndex = new Map(keys.map((k, idx) => [k, idx] as const));
+  const groupEdges: Array<[number, number]> = [];
+  for (const [a, b] of edges) {
+    const ga = groupIndex.get(groupKey[a])!;
+    const gb = groupIndex.get(groupKey[b])!;
+    if (ga !== gb) groupEdges.push([ga, gb]);
+  }
+
+  // Top-level direction (reuse the inference in layeredLayout).
+  const topDir = layeredLayout(
+    keys.map(() => ({ w: 100, h: 100 })),
+    groupEdges,
+    requested,
+    false
+  ).direction;
+  const perp: Direction = topDir === "LR" ? "TB" : "LR";
+
+  // Local layout per frame → relative member positions + cluster size.
+  const localPos = new Array<{ x: number; y: number }>(n);
+  const clusterSizes: { w: number; h: number }[] = [];
+  const offsets: { x: number; y: number }[] = [];
+
+  keys.forEach((k, idx) => {
+    const mem = members.get(k)!;
+    const isFree = k.startsWith("__free_");
+    const subNodes = mem.map((i) => nodes[i]);
+    const memSet = new Set(mem);
+    const internal = edges
+      .filter(([a, b]) => memSet.has(a) && memSet.has(b))
+      .map(([a, b]) => [mem.indexOf(a), mem.indexOf(b)] as [number, number]);
+
+    let local: { x: number; y: number }[];
+    if (subNodes.length === 1) {
+      local = [{ x: 0, y: 0 }];
+    } else if (internal.length > 0) {
+      local = layeredLayout(subNodes, internal, perp, false).positions;
+    } else {
+      local = stackLayout(subNodes, perp);
+    }
+
+    const minX = Math.min(...local.map((p) => p.x));
+    const minY = Math.min(...local.map((p) => p.y));
+    let maxR = 0;
+    let maxB = 0;
+    mem.forEach((nodeIdx, j) => {
+      const rel = { x: local[j].x - minX, y: local[j].y - minY };
+      localPos[nodeIdx] = rel;
+      maxR = Math.max(maxR, rel.x + nodes[nodeIdx].w);
+      maxB = Math.max(maxB, rel.y + nodes[nodeIdx].h);
+    });
+
+    const pad = isFree ? 0 : PAD;
+    const header = isFree ? 0 : HEADER;
+    clusterSizes[idx] = { w: maxR + pad * 2, h: maxB + pad * 2 + header };
+    offsets[idx] = { x: pad, y: pad + header };
+  });
+
+  // Lay the frames out as super-nodes.
+  const groupPos = layeredLayout(clusterSizes, groupEdges, topDir, false).positions;
+
+  const positions = new Array<{ x: number; y: number }>(n);
+  const frameRects = new Map<string, FrameRect>();
+  keys.forEach((k, idx) => {
+    const gp = groupPos[idx];
+    const off = offsets[idx];
+    for (const nodeIdx of members.get(k)!) {
+      positions[nodeIdx] = { x: Math.round(gp.x + off.x + localPos[nodeIdx].x), y: Math.round(gp.y + off.y + localPos[nodeIdx].y) };
+    }
+    if (!k.startsWith("__free_")) {
+      frameRects.set(k, { x: Math.round(gp.x), y: Math.round(gp.y), w: clusterSizes[idx].w, h: clusterSizes[idx].h });
+    }
+  });
+
+  return { positions, frameRects, direction: topDir };
+}
+
+// Final safety net: nudge any remaining overlaps apart (size-aware, 2-D).
+function resolveOverlaps(
+  rects: Array<{ x: number; y: number; w: number; h: number }>,
+  gap = 28
+): void {
+  for (let pass = 0; pass < 60; pass++) {
     let moved = false;
-    for (let i = 0; i < movable.length; i++) {
-      for (let j = i + 1; j < movable.length; j++) {
-        const a = movable[i];
-        const b = movable[j];
-        if (!boxesOverlap(a, b)) continue;
-
+    for (let i = 0; i < rects.length; i++) {
+      for (let j = i + 1; j < rects.length; j++) {
+        const a = rects[i];
+        const b = rects[j];
+        const overlapX = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) + gap;
+        const overlapY = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) + gap;
+        if (overlapX <= 0 || overlapY <= 0) continue;
         moved = true;
-        if (Math.abs(a.x - b.x) < Math.abs(a.y - b.y)) {
-          b.x = Math.min(canvasSize - b.w - 40, b.x + 80);
+        const ca = a.x + a.w / 2;
+        const cb = b.x + b.w / 2;
+        if (overlapX < overlapY) {
+          const d = overlapX / 2;
+          if (ca <= cb) {
+            a.x -= d;
+            b.x += d;
+          } else {
+            a.x += d;
+            b.x -= d;
+          }
         } else {
-          b.y += 70;
+          const d = overlapY / 2;
+          const cay = a.y + a.h / 2;
+          const cby = b.y + b.h / 2;
+          if (cay <= cby) {
+            a.y -= d;
+            b.y += d;
+          } else {
+            a.y += d;
+            b.y -= d;
+          }
         }
       }
     }
@@ -124,265 +536,535 @@ function relaxOverlaps(items: Required<LayoutElement>[], canvasSize: number): vo
   }
 }
 
-function autoLayout(
-  elements: LayoutElement[],
-  canvasSize: number = 1200,
-  arrows: { from: string; to: string }[] = []
-): { x: number; y: number }[] {
-  const n = elements.length;
-  if (n === 0) return [];
+// ────────────────────────────────────────────────────────────────────────────
+// Geometry — connection points & routing
+// ────────────────────────────────────────────────────────────────────────────
 
-  const hasAllPositions = elements.every((e) => e.x !== undefined && e.y !== undefined);
-  if (hasAllPositions) {
-    const items = elements.map((e) => ({ ...e, x: e.x!, y: e.y! })) as Required<LayoutElement>[];
-    relaxOverlaps(items, canvasSize);
-    return items.map((item) => ({ x: item.x, y: item.y }));
+interface Bounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function centerOf(b: Bounds): { x: number; y: number } {
+  return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+}
+
+// Point on `from`'s boundary, on the ray toward `to`'s centre, pushed out by gap.
+function connectionPoint(from: Bounds, to: Bounds, gap = 4): { x: number; y: number } {
+  const a = centerOf(from);
+  const b = centerOf(to);
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const halfW = from.width / 2;
+  const halfH = from.height / 2;
+  const scale = 1 / Math.max(Math.abs(dx) / halfW || 0, Math.abs(dy) / halfH || 0, 0.0001);
+  const edgeX = a.x + dx * scale;
+  const edgeY = a.y + dy * scale;
+  const length = Math.hypot(dx, dy) || 1;
+  return {
+    x: edgeX + (dx / length) * gap,
+    y: edgeY + (dy / length) * gap,
+  };
+}
+
+// Orthogonal (elbow) route between two edge points. Splits on the dominant axis
+// so the route exits and enters perpendicular to the boxes it touches.
+function orthogonalMidpoints(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  direction: Direction
+): Array<[number, number]> {
+  const dx = Math.abs(end.x - start.x);
+  const dy = Math.abs(end.y - start.y);
+  if (dx < 24 || dy < 24) return [];
+  if (direction === "LR") {
+    const midX = (start.x + end.x) / 2;
+    return [
+      [midX, start.y],
+      [midX, end.y],
+    ];
   }
-
-  const byLabel = new Map(elements.map((e, i) => [e.label, i]));
-  const incoming = new Map<number, number[]>();
-  const outgoing = new Map<number, number[]>();
-
-  for (const arrow of arrows) {
-    const from = byLabel.get(arrow.from);
-    const to = byLabel.get(arrow.to);
-    if (from === undefined || to === undefined) continue;
-    outgoing.set(from, [...(outgoing.get(from) || []), to]);
-    incoming.set(to, [...(incoming.get(to) || []), from]);
-  }
-
-  const ranks = new Array(n).fill(0);
-  for (let pass = 0; pass < n; pass++) {
-    let changed = false;
-    for (const [from, tos] of outgoing.entries()) {
-      for (const to of tos) {
-        if (ranks[to] <= ranks[from]) {
-          ranks[to] = ranks[from] + 1;
-          changed = true;
-        }
-      }
-    }
-    if (!changed) break;
-  }
-
-  // If no graph information exists, use a spacious grid.
-  if (outgoing.size === 0 && incoming.size === 0) {
-    const cols = Math.ceil(Math.sqrt(n));
-    const colWidth = 300;
-    const rowHeight = 170;
-    const startX = Math.max(80, canvasSize / 2 - ((cols - 1) * colWidth) / 2);
-    const items = elements.map((e, i) => ({
-      ...e,
-      x: e.x ?? startX + ((i % cols) * colWidth),
-      y: e.y ?? 100 + (Math.floor(i / cols) * rowHeight),
-    })) as Required<LayoutElement>[];
-    relaxOverlaps(items, canvasSize);
-    return items.map((item) => ({ x: item.x, y: item.y }));
-  }
-
-  const columns = new Map<number, number[]>();
-  ranks.forEach((rank, i) => columns.set(rank, [...(columns.get(rank) || []), i]));
-
-  const colWidth = 340;
-  const startX = 80;
-  const items = elements.map((e, i) => {
-    const rank = ranks[i];
-    const col = columns.get(rank) || [];
-    const row = col.indexOf(i);
-    const maxRows = Math.max(...Array.from(columns.values()).map((c) => c.length));
-    const rowHeight = Math.max(150, Math.floor((canvasSize * 0.55) / Math.max(1, maxRows)));
-    return {
-      ...e,
-      x: e.x ?? startX + rank * colWidth,
-      y: e.y ?? 100 + row * rowHeight,
-    } as Required<LayoutElement>;
-  });
-
-  relaxOverlaps(items, Math.max(canvasSize, startX + (Math.max(...ranks) + 1) * colWidth + 420));
-  return items.map((item) => ({ x: item.x, y: item.y }));
+  const midY = (start.y + end.y) / 2;
+  return [
+    [start.x, midY],
+    [end.x, midY],
+  ];
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Helper: create Excalidraw element
+// Excalidraw element factories
 // ────────────────────────────────────────────────────────────────────────────
 
-function createExcalidrawElement(
-  type: string,
+interface El extends Record<string, unknown> {
+  id: string;
+  type: string;
+}
+
+function baseDefaults(): Record<string, unknown> {
+  return {
+    angle: 0,
+    opacity: 100,
+    groupIds: [],
+    frameId: null,
+    boundElements: [],
+    seed: Math.floor(Math.random() * 2 ** 31),
+    version: 1,
+    versionNonce: Math.floor(Math.random() * 2 ** 31),
+    isDeleted: false,
+    updated: Date.now(),
+    link: null,
+    locked: false,
+  };
+}
+
+function createShape(
+  shapeType: string,
   x: number,
   y: number,
   width: number,
   height: number,
-  label: string,
-  style: Record<string, unknown>
-): Record<string, unknown> {
-  const base: Record<string, unknown> = {
-    id: `el_${Math.random().toString(36).slice(2, 9)}`,
-    type,
+  style: {
+    strokeColor?: string;
+    backgroundColor?: string;
+    fillStyle?: string;
+    strokeWidth?: number;
+    strokeStyle?: string;
+  }
+): El {
+  return {
+    id: genId(),
+    type: shapeType,
     x,
     y,
     width,
     height,
-    angle: 0,
     strokeColor: style.strokeColor || COLOR_MAP.blue,
-    backgroundColor: style.backgroundColor || BACKGROUND_MAP.light,
-    fillStyle: style.fillStyle || "hachure",
+    backgroundColor: style.backgroundColor ?? "transparent",
+    fillStyle: style.fillStyle || "solid",
     strokeWidth: style.strokeWidth || 2,
     strokeStyle: style.strokeStyle || "solid",
     roughness: 1,
-    opacity: 100,
-    groupIds: [],
-    frameId: null,
-    roundness: type !== "line" ? { type: 2 } : null,
-    boundElements: null,
-    locked: false,
-    seed: Math.floor(Math.random() * 2 ** 31),
-    version: 1,
-    versionNonce: Math.floor(Math.random() * 2 ** 31),
-    isDeleted: false,
-    updated: Date.now(),
-    link: null,
-    customData: null,
-  };
-
-  if (type === "text") {
-    base.text = label;
-    base.originalText = label;
-    base.fontSize = style.fontSize || 20;
-    base.fontFamily = 1;
-    base.fontWeight = style.fontWeight || 400;
-    base.textAlign = "center";
-    base.verticalAlign = "middle";
-    base.baseline = Math.round((style.fontSize as number | undefined) || 20);
-    base.lineHeight = 1.25;
-    base.containerId = null;
-  } else if (type === "frame") {
-    base.name = label;
-  }
-
-  if (type === "arrow" || type === "connector") {
-    base.startArrowHead = style.arrowStart || null;
-    base.endArrowHead = style.arrowEnd || "arrow";
-    base.startPoint = style.startPoint || "outside";
-    base.endPoint = style.endPoint || "outside";
-    base.route = style.route || [];
-  }
-
-  if (type === "image") {
-    base.imageId = `img_${Math.random().toString(36).slice(2, 9)}`;
-    base.mimeType = style.mimeType || "image/png";
-  }
-
-  return base;
-}
-
-function createArrowElement(
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-  label: string,
-  style: Record<string, unknown>
-): Record<string, unknown> {
-  return {
-    id: `el_${Math.random().toString(36).slice(2, 9)}`,
-    type: "arrow",
-    x: x1,
-    y: y1,
-    width: Math.abs(x2 - x1),
-    height: Math.abs(y2 - y1),
-    angle: 0,
-    strokeColor: style.strokeColor || COLOR_MAP.gray,
-    backgroundColor: "transparent",
-    fillStyle: "none",
-    strokeWidth: style.strokeWidth || 2,
-    strokeStyle: style.strokeStyle || "solid",
-    roughness: 1,
-    opacity: 100,
-    groupIds: [],
-    frameId: null,
-    roundness: { type: 2 },
-    boundElements: null,
-    locked: false,
-    startBinding: null,
-    endBinding: null,
-    startArrowHead: style.arrowStart || null,
-    endArrowHead: style.arrowEnd || "arrow",
-    start: { x: x1, y: y1 },
-    end: { x: x2, y: y2 },
-    points: [
-      [0, 0],
-      [x2 - x1, y2 - y1],
-    ],
-    seed: Math.floor(Math.random() * 2 ** 31),
-    version: 1,
-    versionNonce: Math.floor(Math.random() * 2 ** 31),
-    isDeleted: false,
-    updated: Date.now(),
-    link: null,
-    customData: null,
+    roundness: shapeType === "rectangle" ? { type: 3 } : shapeType === "diamond" ? { type: 2 } : null,
+    ...baseDefaults(),
   };
 }
 
-function createTextElement(
-  x: number,
-  y: number,
-  width: number,
-  height: number,
+// Text bound to a container (box label / arrow label). Excalidraw lays it out.
+function createBoundText(
   text: string,
-  style: Record<string, unknown> = {}
-): Record<string, unknown> {
-  return createExcalidrawElement("text", x, y, width, height, text, {
+  containerId: string,
+  container: Bounds,
+  style: { fontSize?: number; strokeColor?: string }
+): El {
+  const fontSize = style.fontSize || 16;
+  const lines = text.split("\n");
+  const width = Math.max(20, Math.min(container.width - 16, Math.max(...lines.map((l) => l.length)) * fontSize * CHAR_W + 8));
+  const height = Math.max(fontSize * LINE_H, lines.length * fontSize * LINE_H);
+  return {
+    id: genId(),
+    type: "text",
+    x: container.x + (container.width - width) / 2,
+    y: container.y + (container.height - height) / 2,
+    width,
+    height,
+    text,
+    originalText: text,
+    rawText: text,
+    fontSize,
+    fontFamily: 1,
+    textAlign: "center",
+    verticalAlign: "middle",
+    containerId,
+    lineHeight: LINE_H,
+    autoResize: true,
     strokeColor: style.strokeColor || COLOR_MAP.black,
     backgroundColor: "transparent",
-    fontSize: style.fontSize || 16,
-    fontWeight: style.fontWeight || 400,
-  });
+    fillStyle: "solid",
+    strokeWidth: 2,
+    strokeStyle: "solid",
+    roughness: 1,
+    roundness: null,
+    ...baseDefaults(),
+  };
 }
 
-function buildObsidianExcalidrawMarkdown(scene: string): string {
-  let textElements = "";
-  try {
-    const parsed = JSON.parse(scene) as { elements?: Array<{ type?: string; text?: string; id?: string }> };
-    textElements = (parsed.elements || [])
-      .filter((el) => el.type === "text" && el.text)
-      .map((el) => `${el.text} ^${(el.id || "").replace(/[^a-zA-Z0-9]/g, "").slice(0, 8)}`)
-      .join("\n\n");
-  } catch {
-    textElements = "";
+// Free-floating text (no container).
+function createText(
+  x: number,
+  y: number,
+  text: string,
+  style: { fontSize?: number; strokeColor?: string } = {}
+): El {
+  const fontSize = style.fontSize || 16;
+  const lines = text.split("\n");
+  const width = Math.max(...lines.map((l) => l.length)) * fontSize * CHAR_W + 8;
+  const height = lines.length * fontSize * LINE_H;
+  return {
+    id: genId(),
+    type: "text",
+    x,
+    y,
+    width,
+    height,
+    text,
+    originalText: text,
+    rawText: text,
+    fontSize,
+    fontFamily: 1,
+    textAlign: "left",
+    verticalAlign: "top",
+    containerId: null,
+    lineHeight: LINE_H,
+    autoResize: true,
+    strokeColor: style.strokeColor || COLOR_MAP.black,
+    backgroundColor: "transparent",
+    fillStyle: "solid",
+    strokeWidth: 2,
+    strokeStyle: "solid",
+    roughness: 1,
+    roundness: null,
+    ...baseDefaults(),
+  };
+}
+
+function createBoundArrow(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  fromId: string,
+  toId: string,
+  midPoints: Array<[number, number]>,
+  style: { strokeColor?: string; strokeStyle?: string; gap?: number }
+): El {
+  const gap = style.gap ?? 4;
+  const points: Array<[number, number]> = [
+    [0, 0],
+    ...midPoints.map(([px, py]) => [px - start.x, py - start.y] as [number, number]),
+    [end.x - start.x, end.y - start.y],
+  ];
+  return {
+    id: genId(),
+    type: "arrow",
+    x: start.x,
+    y: start.y,
+    width: end.x - start.x,
+    height: end.y - start.y,
+    points,
+    strokeColor: style.strokeColor || COLOR_MAP.gray,
+    backgroundColor: "transparent",
+    fillStyle: "solid",
+    strokeWidth: 2,
+    strokeStyle: style.strokeStyle || "solid",
+    roughness: 1,
+    roundness: midPoints.length > 0 ? { type: 2 } : null,
+    startArrowhead: null,
+    endArrowhead: "arrow",
+    startBinding: { elementId: fromId, focus: 0, gap },
+    endBinding: { elementId: toId, focus: 0, gap },
+    ...baseDefaults(),
+  };
+}
+
+function createFrame(x: number, y: number, width: number, height: number, name: string): El {
+  return {
+    id: genId(),
+    type: "frame",
+    x,
+    y,
+    width,
+    height,
+    name,
+    strokeColor: "#bbbbbb",
+    backgroundColor: FRAME_FILL,
+    fillStyle: "solid",
+    strokeWidth: 1,
+    strokeStyle: "solid",
+    roughness: 0,
+    roundness: null,
+    ...baseDefaults(),
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Scene planning — the heart of draw_excalidraw
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface PlanElement {
+  type: Shape;
+  label: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  strokeColor?: string;
+  backgroundColor?: string;
+  fontSize?: number;
+  fontWeight?: number;
+  strokeStyle?: string;
+  frame?: string; // label of the frame this element belongs to
+}
+
+export interface PlanArrow {
+  from: string;
+  to: string;
+  label?: string;
+  strokeColor?: string;
+  strokeStyle?: string;
+}
+
+export interface PlanInput {
+  elements?: PlanElement[];
+  arrows?: PlanArrow[];
+  title?: string;
+  direction?: Direction | "auto";
+  routing?: "straight" | "orthogonal";
+}
+
+export interface PlannedScene {
+  scene: Record<string, unknown>;
+  texts: Array<{ id: string; text: string }>;
+  elementCount: number;
+  direction: Direction | "none";
+}
+
+function resolveColor(map: Record<string, string>, value: string | undefined, fallback: string): string {
+  if (!value) return fallback;
+  return map[value.toLowerCase()] || (value.startsWith("#") ? value : fallback);
+}
+
+export function planExcalidrawScene(input: PlanInput): PlannedScene {
+  const inputEls = input.elements || [];
+  const inputArrows = input.arrows || [];
+
+  // Split frames from graph nodes. Frames are containers, not layout nodes.
+  const frameInputs = inputEls.filter((e) => e.type === "frame");
+  const nodeInputs = inputEls.filter((e) => e.type !== "frame");
+  const hasFrames = frameInputs.length > 0;
+
+  const nodeIndexByLabel = new Map<string, number>();
+  nodeInputs.forEach((e, i) => nodeIndexByLabel.set(e.label, i));
+
+  // Measure every node.
+  const sizes: NodeSize[] = nodeInputs.map((e) =>
+    nodeSize(e.label, e.type, e.fontSize || 16)
+  );
+
+  // Build the edge list as node-index pairs.
+  const edges: Array<[number, number]> = [];
+  for (const a of inputArrows) {
+    const f = nodeIndexByLabel.get(a.from);
+    const t = nodeIndexByLabel.get(a.to);
+    if (f !== undefined && t !== undefined) edges.push([f, t]);
   }
 
-  return `---\nexcalidraw-plugin: parsed\ntags: [excalidraw]\n---\n\n==⚠  Switch to EXCALIDRAW VIEW in Obsidian. This file is generated by docflow.==\n\n# Excalidraw Data\n\n## Text Elements\n${textElements}\n\n## Drawing\n\`\`\`json\n${scene}\n\`\`\`\n`;
-}
+  // ── Positions ──
+  const layoutNodes: LayoutNode[] = nodeInputs.map((e, i) => ({
+    w: Math.max(e.width || 0, sizes[i].w),
+    h: Math.max(e.height || 0, sizes[i].h),
+    frame: e.frame,
+  }));
 
-// ────────────────────────────────────────────────────────────────────────────
-// Helper: build complete Excalidraw scene
-// ────────────────────────────────────────────────────────────────────────────
+  const allPositioned = nodeInputs.length > 0 && nodeInputs.every((e) => e.x !== undefined && e.y !== undefined);
+  let positions: { x: number; y: number }[];
+  let direction: Direction;
+  let computedFrameRects: Map<string, FrameRect> | null = null;
 
-function buildExcalidrawScene(
-  elements: Record<string, unknown>[],
-  title: string,
-  canvasWidth: number = 1600,
-  canvasHeight: number = 900
-): string {
+  if (allPositioned) {
+    positions = nodeInputs.map((e) => ({ x: e.x!, y: e.y! }));
+    direction = input.direction === "TB" ? "TB" : "LR";
+  } else if (hasFrames) {
+    // Two-level clustered layout — keeps frame members together, frames apart.
+    const result = layoutWithFrames(layoutNodes, edges, input.direction || "auto");
+    positions = result.positions;
+    direction = result.direction;
+    computedFrameRects = result.frameRects;
+  } else if (edges.length === 0) {
+    positions = gridLayout(layoutNodes);
+    direction = input.direction === "TB" ? "TB" : "LR";
+  } else {
+    const result = layeredLayout(layoutNodes, edges, input.direction || "auto", hasFrames);
+    positions = result.positions;
+    direction = result.direction;
+  }
+
+  // Safety: remove any residual overlaps. Skipped when frames are present — the
+  // clustered layout is already collision-free and nudging would break frames.
+  if (!hasFrames && !allPositioned) {
+    const rects = positions.map((p, i) => ({ x: p.x, y: p.y, w: layoutNodes[i].w, h: layoutNodes[i].h }));
+    resolveOverlaps(rects);
+    positions = rects.map((r) => ({ x: r.x, y: r.y }));
+  }
+
+  // ── Build shape elements with bound labels ──
+  const elements: El[] = [];
+  const texts: Array<{ id: string; text: string }> = [];
+  const shapeByLabel = new Map<string, El>();
+  const labelEls: El[] = [];
+
+  nodeInputs.forEach((e, i) => {
+    const shapeType = SHAPE_MAP[e.type] || "rectangle";
+    const bounds: Bounds = { x: positions[i].x, y: positions[i].y, width: layoutNodes[i].w, height: layoutNodes[i].h };
+    const shape = createShape(shapeType, bounds.x, bounds.y, bounds.width, bounds.height, {
+      strokeColor: resolveColor(COLOR_MAP, e.strokeColor, COLOR_MAP.blue),
+      backgroundColor: resolveColor(BACKGROUND_MAP, e.backgroundColor, "#ffffff"),
+    });
+    elements.push(shape);
+    shapeByLabel.set(e.label, shape);
+
+    if (e.label) {
+      const label = createBoundText(sizes[i].wrapped, shape.id, bounds, {
+        fontSize: e.fontSize || 16,
+      });
+      (shape.boundElements as Array<Record<string, unknown>>).push({ type: "text", id: label.id });
+      labelEls.push(label);
+      texts.push({ id: label.id, text: sizes[i].wrapped });
+    }
+  });
+
+  // ── Build frames wrapping their members ──
+  const frameEls: El[] = [];
+  const childFrameId = new Map<string, string>(); // node label -> frame id
+  frameInputs.forEach((f) => {
+    const members = nodeInputs
+      .map((e, i) => ({ e, i }))
+      .filter(({ e }) => e.frame === f.label);
+    let fx: number, fy: number, fw: number, fh: number;
+    const precomputed = computedFrameRects?.get(f.label);
+    if (precomputed) {
+      ({ x: fx, y: fy, w: fw, h: fh } = precomputed);
+    } else if (members.length > 0) {
+      const pad = 28;
+      const headroom = 30; // room for the frame name at the top
+      const minX = Math.min(...members.map(({ i }) => positions[i].x));
+      const minY = Math.min(...members.map(({ i }) => positions[i].y));
+      const maxX = Math.max(...members.map(({ i }) => positions[i].x + layoutNodes[i].w));
+      const maxY = Math.max(...members.map(({ i }) => positions[i].y + layoutNodes[i].h));
+      fx = minX - pad;
+      fy = minY - pad - headroom;
+      fw = maxX - minX + pad * 2;
+      fh = maxY - minY + pad * 2 + headroom;
+    } else {
+      fx = f.x ?? MARGIN;
+      fy = f.y ?? MARGIN;
+      fw = f.width ?? 360;
+      fh = f.height ?? 240;
+    }
+    const frame = createFrame(fx, fy, fw, fh, f.label);
+    frameEls.push(frame);
+    members.forEach(({ e }) => childFrameId.set(e.label, frame.id));
+  });
+
+  // Attach children to their frame (frameId) so Excalidraw treats them as contained.
+  for (const [label, frameId] of childFrameId) {
+    const shape = shapeByLabel.get(label);
+    if (shape) shape.frameId = frameId;
+  }
+
+  // ── Build arrows with bindings + bound labels ──
+  const arrowEls: El[] = [];
+  const arrowLabelEls: El[] = [];
+  inputArrows.forEach((a) => {
+    const from = shapeByLabel.get(a.from);
+    const to = shapeByLabel.get(a.to);
+    if (!from || !to) return;
+
+    const fromBounds: Bounds = {
+      x: from.x as number,
+      y: from.y as number,
+      width: from.width as number,
+      height: from.height as number,
+    };
+    const toBounds: Bounds = {
+      x: to.x as number,
+      y: to.y as number,
+      width: to.width as number,
+      height: to.height as number,
+    };
+    const start = connectionPoint(fromBounds, toBounds);
+    const end = connectionPoint(toBounds, fromBounds);
+    const midPoints = input.routing === "orthogonal" ? orthogonalMidpoints(start, end, direction) : [];
+
+    const arrow = createBoundArrow(start, end, from.id, to.id, midPoints, {
+      strokeColor: resolveColor(COLOR_MAP, a.strokeColor, COLOR_MAP.gray),
+      strokeStyle: a.strokeStyle,
+    });
+    (from.boundElements as Array<Record<string, unknown>>).push({ id: arrow.id, type: "arrow" });
+    (to.boundElements as Array<Record<string, unknown>>).push({ id: arrow.id, type: "arrow" });
+    arrowEls.push(arrow);
+
+    if (a.label) {
+      const midX = (start.x + end.x) / 2;
+      const midY = (start.y + end.y) / 2;
+      const lbl = createBoundText(a.label, arrow.id, { x: midX - 60, y: midY - 12, width: 120, height: 24 }, {
+        fontSize: 13,
+        strokeColor: COLOR_MAP.gray,
+      });
+      (arrow.boundElements as Array<Record<string, unknown>>).push({ type: "text", id: lbl.id });
+      arrowLabelEls.push(lbl);
+      texts.push({ id: lbl.id, text: a.label });
+    }
+  });
+
+  // ── Assemble in z-order: frames (back) → shapes → labels → arrows → arrow labels ──
+  const ordered: El[] = [...frameEls, ...elements, ...labelEls, ...arrowEls, ...arrowLabelEls];
+
   const scene: Record<string, unknown> = {
     type: "excalidraw",
     version: 2,
     source: "docflow",
+    elements: ordered,
     appState: {
-      zoom: { value: 1 },
-      viewBackgroundColor: "#ffffff",
       gridSize: 20,
-      gridStep: 20,
-      gridModeEnabled: true,
+      viewBackgroundColor: "#ffffff",
+      ...(input.title ? { name: input.title } : {}),
     },
     files: {},
-    elements,
   };
 
-  if (title) {
-    (scene.appState as Record<string, unknown>).title = title;
-  }
+  return {
+    scene,
+    texts,
+    elementCount: ordered.length,
+    direction: nodeInputs.length === 0 ? "none" : direction,
+  };
+}
 
+// ────────────────────────────────────────────────────────────────────────────
+// Obsidian Excalidraw markdown wrapper
+// ────────────────────────────────────────────────────────────────────────────
+
+function buildObsidianExcalidrawMarkdown(sceneJson: string, texts: Array<{ id: string; text: string }>): string {
+  const textElements = texts
+    .map((t) => `${t.text} ^${t.id}`)
+    .join("\n\n");
+
+  return [
+    "---",
+    "",
+    "excalidraw-plugin: parsed",
+    "tags: [excalidraw]",
+    "",
+    "---",
+    "==⚠  Switch to EXCALIDRAW VIEW in the MORE OPTIONS menu of this document. ⚠==",
+    "",
+    "",
+    "# Excalidraw Data",
+    "",
+    "## Text Elements",
+    textElements,
+    "",
+    "%%",
+    "## Drawing",
+    "```json",
+    sceneJson,
+    "```",
+    "%%",
+    "",
+  ].join("\n");
+}
+
+function buildSceneJson(scene: Record<string, unknown>): string {
   return JSON.stringify(scene, null, 2);
 }
 
@@ -640,12 +1322,14 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
     name: "draw_excalidraw",
     label: "draw_excalidraw",
     description:
-      "Create or update a free-form Excalidraw diagram. Describe elements in plain English — the tool generates valid JSON. Best for architecture diagrams, wireframes, sketches, and brainstorming. Use draw_mermaid for standard diagrams (sequence, flowchart, state).",
+      "Create or update a free-form Excalidraw diagram (architecture, wireframes, sketches). Describe boxes and arrows in plain English — the tool auto-lays-out the nodes, binds arrows to box edges, and centres labels inside boxes. Use draw_mermaid for standard diagrams (sequence, flowchart, state).",
     parameters: Type.Object({
       project: Type.Optional(Type.String()),
       filePath: Type.Optional(Type.String()),
       title: Type.Optional(Type.String()),
       description: Type.Optional(Type.String()),
+      direction: Type.Optional(StringEnum(["auto", "LR", "TB"])),
+      routing: Type.Optional(StringEnum(["straight", "orthogonal"])),
       elements: Type.Optional(Type.Array(Type.Object({
         type: StringEnum(["box", "circle", "diamond", "text", "note", "image", "frame"]),
         label: Type.String(),
@@ -658,152 +1342,64 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
         fontSize: Type.Optional(Type.Number()),
         fontWeight: Type.Optional(Type.Number()),
         strokeStyle: Type.Optional(Type.String()),
+        frame: Type.Optional(Type.String()),
       }))),
       arrows: Type.Optional(Type.Array(Type.Object({
         from: Type.String(),  // label of source element
         to: Type.String(),    // label of target element
         label: Type.Optional(Type.String()),
         strokeColor: Type.Optional(Type.String()),
+        strokeStyle: Type.Optional(Type.String()),
       }))),
       canvasSize: Type.Optional(Type.Number()),
     }),
     promptSnippet: "Create an Excalidraw diagram",
     promptGuidelines: [
       "Use draw_excalidraw for free-form diagrams: architecture, wireframes, sketches.",
-      "Describe elements in English — x/y positions can be omitted for auto-layout.",
+      "Omit x/y — the tool auto-lays-out nodes from the arrows (Sugiyama layered layout) and binds arrows to box edges. Only set x/y to override.",
+      "Leave direction as 'auto' (inferred from the graph) unless you want to force 'LR' or 'TB'.",
+      "Group related nodes by giving each element a 'frame' (the label of a frame element); the frame auto-sizes to wrap its members.",
+      "Reference elements in arrows by their label. Arrow labels are drawn on the line, clear of the boxes.",
       "Use draw_mermaid for structured diagrams: sequence, flowchart, state, gantt, class, ER.",
-      "Use a canvasSize of 1200-1600 for most diagrams.",
     ],
     async execute(_toolCallId, params) {
       const slug = params.project || "_unassigned";
       const filePath = params.filePath || resolveProjectPath(slug, "<slug>/diagrams/_Sketch.excalidraw.md") || `${slug}/diagrams/_Sketch.excalidraw.md`;
 
-      // Parse elements
-      const elements: Record<string, unknown>[] = [];
-      const labeledElements: Record<string, Record<string, unknown>> = {};
+      const planned = planExcalidrawScene({
+        elements: params.elements as PlanElement[] | undefined,
+        arrows: params.arrows as PlanArrow[] | undefined,
+        title: params.title,
+        direction: (params.direction as Direction | "auto" | undefined) || "auto",
+        routing: (params.routing as "straight" | "orthogonal" | undefined) || "straight",
+      });
 
-      if (params.elements) {
-        const sizedElements = params.elements.map((e) => {
-          const size = estimateSize(e);
-          return {
-            x: e.x,
-            y: e.y,
-            w: size.width,
-            h: size.height,
-            label: e.label,
-            type: e.type,
-          };
-        });
-        const positions = autoLayout(
-          sizedElements,
-          params.canvasSize || 1200,
-          params.arrows || []
-        );
-
-        params.elements.forEach((e, i) => {
-          const pos = positions[i];
-          const size = sizedElements[i];
-          const excalidrawType = SHAPE_MAP[e.type] || "rectangle";
-          const strokeColor = COLOR_MAP[e.strokeColor || ""] || e.strokeColor || COLOR_MAP.blue;
-          const bgColor = BACKGROUND_MAP[e.backgroundColor || ""] || e.backgroundColor || BACKGROUND_MAP.light;
-
-          const width = size.w;
-          const height = size.h;
-          const el = createExcalidrawElement(
-            excalidrawType,
-            pos.x,
-            pos.y,
-            width,
-            height,
-            e.label,
-            {
-              strokeColor,
-              backgroundColor: bgColor,
-              fontSize: e.fontSize,
-              fontWeight: e.fontWeight,
-              strokeStyle: e.strokeStyle,
-            }
-          );
-
-          elements.push(el);
-          if (excalidrawType !== "text" && excalidrawType !== "frame" && e.label) {
-            elements.push(createTextElement(pos.x + 8, pos.y + Math.max(8, height / 2 - 14), Math.max(20, width - 16), 28, e.label, {
-              fontSize: e.fontSize || 16,
-              fontWeight: e.fontWeight || 400,
-            }));
-          }
-          labeledElements[e.label] = el;
-        });
-      }
-
-      // Parse arrows
-      if (params.arrows) {
-        params.arrows.forEach((arrow) => {
-          const fromEl = labeledElements[arrow.from];
-          const toEl = labeledElements[arrow.to];
-
-          if (fromEl && toEl) {
-            const fromX = typeof fromEl.x === "number" ? fromEl.x : 0;
-            const fromY = typeof fromEl.y === "number" ? fromEl.y : 0;
-            const fromW = typeof fromEl.width === "number" ? fromEl.width : 160;
-            const fromH = typeof fromEl.height === "number" ? fromEl.height : 60;
-            const toX = typeof toEl.x === "number" ? toEl.x : 0;
-            const toY = typeof toEl.y === "number" ? toEl.y : 0;
-            const toW = typeof toEl.width === "number" ? toEl.width : 160;
-            const toH = typeof toEl.height === "number" ? toEl.height : 60;
-
-            const arrowEl = createArrowElement(
-              fromX + fromW / 2,
-              fromY + fromH / 2,
-              toX + toW / 2,
-              toY + toH / 2,
-              arrow.label || "",
-              {
-                arrowEnd: "arrow",
-                strokeColor: COLOR_MAP[arrow.strokeColor || ""] || arrow.strokeColor || COLOR_MAP.gray,
-              }
-            );
-            elements.push(arrowEl);
-            if (arrow.label) {
-              elements.push(createTextElement(
-                (fromX + fromW / 2 + toX + toW / 2) / 2 - 50,
-                (fromY + fromH / 2 + toY + toH / 2) / 2 - 16,
-                100,
-                24,
-                arrow.label,
-                { fontSize: 13, strokeColor: COLOR_MAP.gray }
-              ));
-            }
-          }
-        });
-      }
-
-      // Build scene
-      const scene = buildExcalidrawScene(elements, params.title || "Untitled", params.canvasSize || 1600, params.canvasSize ? params.canvasSize * 0.5625 : 900);
+      const sceneJson = buildSceneJson(planned.scene);
 
       ensureDir(dirname(filePath));
       if (filePath.endsWith(".excalidraw.md")) {
-        writeFileSync(filePath, buildObsidianExcalidrawMarkdown(scene), "utf-8");
-        writeFileSync(filePath.replace(/\.excalidraw\.md$/, ".json"), scene, "utf-8");
+        writeFileSync(filePath, buildObsidianExcalidrawMarkdown(sceneJson, planned.texts), "utf-8");
+        writeFileSync(filePath.replace(/\.excalidraw\.md$/, ".json"), sceneJson, "utf-8");
       } else {
         // Raw Excalidraw JSON, importable by excalidraw.com and compatible tools.
-        writeFileSync(filePath, scene, "utf-8");
+        writeFileSync(filePath, sceneJson, "utf-8");
         // Obsidian Excalidraw plugin format.
-        writeFileSync(filePath.replace(/\.(json|excalidraw)$/, ".excalidraw.md"), buildObsidianExcalidrawMarkdown(scene), "utf-8");
+        writeFileSync(filePath.replace(/\.(json|excalidraw)$/, ".excalidraw.md"), buildObsidianExcalidrawMarkdown(sceneJson, planned.texts), "utf-8");
       }
 
       return {
         content: [
           {
             type: "text",
-            text: `✓ Diagram created: ${basename(filePath)}\n  Elements: ${elements.length}\n  File: ${filePath}`,
+            text: `✓ Diagram created: ${basename(filePath)}\n  Elements: ${planned.elementCount}  Layout: ${planned.direction}\n  File: ${filePath}`,
           },
         ],
         details: {
           action: "draw_excalidraw",
           project: slug,
           filePath: basename(filePath),
-          elementCount: elements.length,
+          elementCount: planned.elementCount,
+          direction: planned.direction,
         },
       };
     },
