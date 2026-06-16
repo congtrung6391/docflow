@@ -916,13 +916,36 @@ function createText(
   };
 }
 
+// Normalised [horizontal, vertical] ratio (0..1) of a port on a box — this is
+// what Excalidraw's native elbow arrows use (`fixedPoint`) to anchor a binding.
+function fixedPointFor(side: Side, t: number): [number, number] {
+  switch (side) {
+    case "top": return [t, 0];
+    case "bottom": return [t, 1];
+    case "left": return [0, t];
+    case "right": return [1, t];
+  }
+}
+
 function createBoundArrow(
   start: { x: number; y: number },
   end: { x: number; y: number },
   fromId: string,
   toId: string,
   midPoints: Array<[number, number]>,
-  style: { strokeColor?: string; strokeStyle?: string; gap?: number; startFocus?: number; endFocus?: number }
+  style: {
+    strokeColor?: string;
+    strokeStyle?: string;
+    gap?: number;
+    startFocus?: number;
+    endFocus?: number;
+    // When set, emit a native Excalidraw elbow arrow: Excalidraw owns the
+    // routing and re-flows it whenever a bound box moves. `fixedPoint` anchors
+    // each end; `focus`/`gap` are kept for older-plugin compatibility.
+    elbowed?: boolean;
+    startFixedPoint?: [number, number];
+    endFixedPoint?: [number, number];
+  }
 ): El {
   const gap = style.gap ?? 3;
   const points: Array<[number, number]> = [
@@ -930,6 +953,14 @@ function createBoundArrow(
     ...midPoints.map(([px, py]) => [px - start.x, py - start.y] as [number, number]),
     [end.x - start.x, end.y - start.y],
   ];
+  const startBinding: Record<string, unknown> = { elementId: fromId, focus: style.startFocus ?? 0, gap };
+  const endBinding: Record<string, unknown> = { elementId: toId, focus: style.endFocus ?? 0, gap };
+  if (style.elbowed) {
+    startBinding.fixedPoint = style.startFixedPoint;
+    startBinding.mode = "orbit";
+    endBinding.fixedPoint = style.endFixedPoint;
+    endBinding.mode = "orbit";
+  }
   return {
     id: genId(),
     type: "arrow",
@@ -950,8 +981,11 @@ function createBoundArrow(
     roundness: null,
     startArrowhead: null,
     endArrowhead: "arrow",
-    startBinding: { elementId: fromId, focus: style.startFocus ?? 0, gap },
-    endBinding: { elementId: toId, focus: style.endFocus ?? 0, gap },
+    // Native elbow flags — Excalidraw re-routes these on edit (best for
+    // frame-less diagrams; broken inside frames in the Obsidian plugin, #2187).
+    ...(style.elbowed ? { elbowed: true, fixedSegments: null, startIsSpecial: null, endIsSpecial: null } : {}),
+    startBinding,
+    endBinding,
     ...baseDefaults(),
   };
 }
@@ -1003,12 +1037,14 @@ export interface PlanArrow {
   strokeStyle?: string;
 }
 
+export type Routing = "straight" | "orthogonal" | "elbow";
+
 export interface PlanInput {
   elements?: PlanElement[];
   arrows?: PlanArrow[];
   title?: string;
   direction?: Direction | "auto";
-  routing?: "straight" | "orthogonal";
+  routing?: Routing;
 }
 
 export interface PlannedScene {
@@ -1016,6 +1052,9 @@ export interface PlannedScene {
   texts: Array<{ id: string; text: string }>;
   elementCount: number;
   direction: Direction | "none";
+  // The routing actually applied. May differ from the request: "elbow" falls
+  // back to "orthogonal" when frames are present (Obsidian #2187).
+  routing: Routing;
 }
 
 function resolveColor(map: Record<string, string>, value: string | undefined, fallback: string): string {
@@ -1164,7 +1203,12 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
   //      crisp perpendicular elbow. No pile-ups at box centres, no diagonals.
   const arrowEls: El[] = [];
   const arrowLabelEls: El[] = [];
-  const useOrthogonal = input.routing !== "straight";
+  // "elbow" lets Excalidraw natively auto-route + re-flow on edit, but it's
+  // broken inside frames in the Obsidian plugin (#2187), so fall back to our
+  // own orthogonal router whenever frames are present.
+  const emitElbow = input.routing === "elbow" && !hasFrames;
+  const routingUsed: Routing = input.routing === "elbow" && hasFrames ? "orthogonal" : input.routing || "orthogonal";
+  const useOrthogonal = routingUsed !== "straight";
 
   type ArrowPlan = {
     a: PlanArrow;
@@ -1274,11 +1318,15 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
     const { a, from, to, fromBounds, toBounds, fromSide, toSide, waypoints, channel } = plan;
     const start = portPoint(fromBounds, fromSide, plan.startT);
     const end = portPoint(toBounds, toSide, plan.endT);
-    const route = channel
-      ? sideChannelRoute(start, end, channelCross(channel, plan.laneIdx), direction)
-      : useOrthogonal
-        ? orthogonalRoute(start, end, waypoints, direction)
-        : [start, end];
+    // Elbow arrows store just the two endpoints — Excalidraw computes (and keeps
+    // re-computing) the bends itself. Everything else stores an explicit route.
+    const route = emitElbow
+      ? [start, end]
+      : channel
+        ? sideChannelRoute(start, end, channelCross(channel, plan.laneIdx), direction)
+        : useOrthogonal
+          ? orthogonalRoute(start, end, waypoints, direction)
+          : [start, end];
     const midPoints = route.slice(1, -1).map((p) => [p.x, p.y] as [number, number]);
 
     const arrow = createBoundArrow(start, end, from.id as string, to.id as string, midPoints, {
@@ -1286,6 +1334,9 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
       strokeStyle: a.strokeStyle,
       startFocus: focusFromT(plan.startT),
       endFocus: focusFromT(plan.endT),
+      ...(emitElbow
+        ? { elbowed: true, startFixedPoint: fixedPointFor(fromSide, plan.startT), endFixedPoint: fixedPointFor(toSide, plan.endT) }
+        : {}),
     });
     (from.boundElements as Array<Record<string, unknown>>).push({ id: arrow.id, type: "arrow" });
     (to.boundElements as Array<Record<string, unknown>>).push({ id: arrow.id, type: "arrow" });
@@ -1324,6 +1375,7 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
     texts,
     elementCount: ordered.length,
     direction: nodeInputs.length === 0 ? "none" : direction,
+    routing: routingUsed,
   };
 }
 
@@ -1611,18 +1663,21 @@ function renderMermaidBlock(block: MermaidBlock, title: string): string {
 // ────────────────────────────────────────────────────────────────────────────
 
 export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug: string, relativePath: string) => string | null, getCurrentProject: () => string | null): void {
-  // Resolve where a diagram file should be written. Crucially, this NEVER returns
-  // a repo-relative path (the old `${slug}/diagrams/...` fallback was written
-  // relative to cwd, so diagrams landed in the working repo instead of the vault):
+  // Resolve where a diagram file should be written. Diagrams have one home:
+  // `<project-root>/diagrams/`. This NEVER returns a repo-relative path (the old
+  // `${slug}/diagrams/...` fallback was written relative to cwd, so diagrams
+  // landed in the working repo instead of the vault):
   //   • an absolute filePath is honoured verbatim (explicit escape hatch);
-  //   • a relative filePath is placed inside the project's vault doc space;
+  //   • a relative filePath is normalised under `<slug>/diagrams/` — a redundant
+  //     leading `docs/` is stripped (the project folder is already the doc root)
+  //     and a `diagrams/` prefix is ensured, so `docs/diagrams/x`, `docs/x` and
+  //     `x` all land in `<slug>/diagrams/x`;
   //   • an unresolvable project falls back to an absolute path under the data dir.
   const resolveDiagramPath = (slug: string, userFilePath: string | undefined, defaultName: string): string => {
     if (userFilePath && isAbsolute(userFilePath)) return userFilePath;
-    const rel = userFilePath ? `<slug>/${userFilePath}` : `<slug>/diagrams/${defaultName}`;
-    const resolved = resolveProjectPath(slug, rel);
-    if (resolved) return resolved;
-    return join(DATA_DIR, "diagrams", slug, basename(userFilePath || defaultName));
+    let name = (userFilePath || defaultName).replace(/^\/+/, "").replace(/^docs\//i, "");
+    if (!/^diagrams\//i.test(name)) name = `diagrams/${name}`;
+    return resolveProjectPath(slug, `<slug>/${name}`) || join(DATA_DIR, slug, name);
   };
 
   // ──────────────────────────────────────────────────────────────────
@@ -1640,7 +1695,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
       title: Type.Optional(Type.String()),
       description: Type.Optional(Type.String()),
       direction: Type.Optional(StringEnum(["auto", "LR", "TB"])),
-      routing: Type.Optional(StringEnum(["straight", "orthogonal"])),
+      routing: Type.Optional(StringEnum(["straight", "orthogonal", "elbow"])),
       elements: Type.Optional(Type.Array(Type.Object({
         type: StringEnum(["box", "circle", "diamond", "text", "note", "image", "frame"]),
         label: Type.String(),
@@ -1671,7 +1726,8 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
       "Leave direction as 'auto' (inferred from the graph) unless you want to force 'LR' or 'TB'.",
       "Group related nodes by giving each element a 'frame' (the label of a frame element); the frame auto-sizes to wrap its members.",
       "Reference elements in arrows by their label. Arrow labels are drawn on the line, clear of the boxes.",
-      "Leave routing as 'orthogonal' (default): arrows fan across box edges and bend through clear lanes so each is easy to trace. Pass 'straight' only for simple diagrams where direct diagonal lines read fine.",
+      "Leave routing as 'orthogonal' (default): arrows fan across box edges and bend through clear lanes so each is easy to trace. Pass 'straight' for simple direct diagonal lines.",
+      "Pass routing 'elbow' for native Excalidraw elbow arrows that auto-reroute as boxes move — best for diagrams WITHOUT frames. With frames it auto-falls back to 'orthogonal' (Obsidian elbow-in-frame bug).",
       "Use draw_mermaid for structured diagrams: sequence, flowchart, state, gantt, class, ER.",
     ],
     async execute(_toolCallId, params) {
@@ -1683,8 +1739,16 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
         arrows: params.arrows as PlanArrow[] | undefined,
         title: params.title,
         direction: (params.direction as Direction | "auto" | undefined) || "auto",
-        routing: (params.routing as "straight" | "orthogonal" | undefined) || "orthogonal",
+        routing: (params.routing as Routing | undefined) || "orthogonal",
       });
+
+      const elbowFellBack = params.routing === "elbow" && planned.routing !== "elbow";
+      const routingNote =
+        planned.routing === "elbow"
+          ? "\n  Arrows: native elbow (auto-reroute on edit)"
+          : elbowFellBack
+            ? "\n  Arrows: orthogonal (elbow unavailable — diagram has frames, Obsidian #2187)"
+            : "";
 
       const sceneJson = buildSceneJson(planned.scene);
 
@@ -1703,7 +1767,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
         content: [
           {
             type: "text",
-            text: `✓ Diagram created: ${basename(filePath)}\n  Elements: ${planned.elementCount}  Layout: ${planned.direction}\n  File: ${filePath}`,
+            text: `✓ Diagram created: ${basename(filePath)}\n  Elements: ${planned.elementCount}  Layout: ${planned.direction}${routingNote}\n  File: ${filePath}`,
           },
         ],
         details: {
@@ -1712,6 +1776,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
           filePath: basename(filePath),
           elementCount: planned.elementCount,
           direction: planned.direction,
+          routing: planned.routing,
         },
       };
     },
