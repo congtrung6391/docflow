@@ -916,13 +916,38 @@ function createText(
   };
 }
 
+// Normalised [horizontal, vertical] ratio (0..1) of a port on a box — the
+// `fixedPoint` an elbow arrow's binding anchors to. Avoids exactly 0.5, which
+// trips Excalidraw's fixedPoint precision handling.
+function fixedPointFor(side: Side, t: number): [number, number] {
+  const v = Math.abs(t - 0.5) < 1e-6 ? 0.5001 : t;
+  switch (side) {
+    case "top": return [v, 0];
+    case "bottom": return [v, 1];
+    case "left": return [0, v];
+    case "right": return [1, v];
+  }
+}
+
 function createBoundArrow(
   start: { x: number; y: number },
   end: { x: number; y: number },
   fromId: string,
   toId: string,
   midPoints: Array<[number, number]>,
-  style: { strokeColor?: string; strokeStyle?: string; gap?: number; startFocus?: number; endFocus?: number }
+  style: {
+    strokeColor?: string;
+    strokeStyle?: string;
+    gap?: number;
+    startFocus?: number;
+    endFocus?: number;
+    // When set, this is a real Excalidraw ELBOW arrow (the 3rd "Arrow type").
+    // `fixedPoint` anchors each end to a box edge; we keep the full routed path
+    // in `points` and omit `mode` so Excalidraw's own restore fills it in.
+    elbowed?: boolean;
+    startFixedPoint?: [number, number];
+    endFixedPoint?: [number, number];
+  }
 ): El {
   const gap = style.gap ?? 3;
   const points: Array<[number, number]> = [
@@ -930,6 +955,18 @@ function createBoundArrow(
     ...midPoints.map(([px, py]) => [px - start.x, py - start.y] as [number, number]),
     [end.x - start.x, end.y - start.y],
   ];
+  const elbowed = !!style.elbowed;
+  // Match the EXACT binding shape the Obsidian Excalidraw plugin (v2.23.x) emits
+  // for elbow arrows: { elementId, mode:"orbit", fixedPoint } — no focus/gap, and
+  // NO fixedSegments/startIsSpecial/endIsSpecial (absent in this version; emitting
+  // them made restore reject the elbow and fall back to a sharp arrow). Non-elbow
+  // arrows keep the standard { elementId, focus, gap } binding.
+  const startBinding: Record<string, unknown> = elbowed
+    ? { elementId: fromId, mode: "orbit", fixedPoint: style.startFixedPoint }
+    : { elementId: fromId, focus: style.startFocus ?? 0, gap };
+  const endBinding: Record<string, unknown> = elbowed
+    ? { elementId: toId, mode: "orbit", fixedPoint: style.endFixedPoint }
+    : { elementId: toId, focus: style.endFocus ?? 0, gap };
   return {
     id: genId(),
     type: "arrow",
@@ -943,18 +980,16 @@ function createBoundArrow(
     fillStyle: "solid",
     strokeWidth: 2,
     strokeStyle: style.strokeStyle || "solid",
-    // Elbow connector: STRAIGHT orthogonal segments meeting at RIGHT ANGLES
-    // (roundness null = no curve; roughness 0 = no sketchy wobble). Every arrow
-    // is bound to both endpoints below, so it always meets a real box edge and
-    // never floats. (We deliberately do NOT emit native `elbowed` arrows — they
-    // bind unreliably in the Obsidian plugin and end up pointing to nowhere; a
-    // bound orthogonal route with right-angle corners is the dependable elbow.)
     roughness: 0,
     roundness: null,
     startArrowhead: null,
     endArrowhead: "arrow",
-    startBinding: { elementId: fromId, focus: style.startFocus ?? 0, gap },
-    endBinding: { elementId: toId, focus: style.endFocus ?? 0, gap },
+    // The 3rd Excalidraw "Arrow type". Full routed path kept in `points` so it
+    // reads right even before Excalidraw re-routes; lastCommittedPoint mirrors
+    // what the plugin's own arrow builder sets.
+    ...(elbowed ? { elbowed: true, lastCommittedPoint: null } : {}),
+    startBinding,
+    endBinding,
     ...baseDefaults(),
   };
 }
@@ -1172,13 +1207,16 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
   //      crisp perpendicular elbow. No pile-ups at box centres, no diagonals.
   const arrowEls: El[] = [];
   const arrowLabelEls: El[] = [];
-  // Every arrow is our own orthogonal route with solid bindings (so it always
-  // points at a real box edge) and rounded corners (the elbow look). "elbow" and
-  // "orthogonal" route identically here — native Excalidraw elbow arrows bind
-  // unreliably in the Obsidian plugin, so we don't emit them. "straight" stays a
-  // direct line.
-  const routingUsed: Routing = input.routing === "straight" ? "straight" : "orthogonal";
-  const useOrthogonal = routingUsed !== "straight";
+  // Default to real Excalidraw ELBOW arrows (3rd arrow type). We always compute
+  // our own orthogonal route for the points (so it reads right even before
+  // Excalidraw re-routes), bind both ends to box edges, and add `elbowed:true`.
+  // The Obsidian bug #2187 only breaks elbow arrows whose endpoints share a
+  // frame, so those stay non-elbow (still bound, still orthogonal). "straight"
+  // forces a plain direct line.
+  const wantElbow = input.routing !== "straight";
+  const routingUsed: Routing = wantElbow ? "elbow" : "straight";
+  const useOrthogonal = wantElbow; // we still compute orthogonal points for the elbow path
+  const frameByLabel = new Map(nodeInputs.map((e) => [e.label, e.frame]));
 
   type ArrowPlan = {
     a: PlanArrow;
@@ -1193,6 +1231,7 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
     laneIdx: number;
     startT: number;
     endT: number;
+    elbow: boolean;
   };
 
   // Bounding box of the whole drawing — margin trunk lanes sit just outside it.
@@ -1221,6 +1260,11 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
     const ti = nodeIndexByLabel.get(a.to);
     const waypoints: Pt[] = (fi !== undefined && ti !== undefined && edgeRoutes.get(edgeKey(fi, ti))) || [];
 
+    // Elbow type unless both endpoints share a frame (Obsidian #2187).
+    const frameA = frameByLabel.get(a.from);
+    const frameB = frameByLabel.get(a.to);
+    const elbow = wantElbow && !(frameA && frameA === frameB);
+
     // A framed edge that would cross other boxes → margin trunk.
     const isEndpoint = (b: Bounds) => (b.x === fromBounds.x && b.y === fromBounds.y) || (b.x === toBounds.x && b.y === toBounds.y);
     const others = allBounds.filter((b) => !isEndpoint(b));
@@ -1242,7 +1286,7 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
       }
     }
 
-    const plan: ArrowPlan = { a, from, to, fromBounds, toBounds, fromSide, toSide, waypoints, channel, laneIdx: 0, startT: 0.5, endT: 0.5 };
+    const plan: ArrowPlan = { a, from, to, fromBounds, toBounds, fromSide, toSide, waypoints, channel, laneIdx: 0, startT: 0.5, endT: 0.5, elbow };
     plans.push(plan);
 
     const register = (boxId: string, side: Side, end: "start" | "end", otherCenter: Pt) => {
@@ -1285,7 +1329,7 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
   };
 
   for (const plan of plans) {
-    const { a, from, to, fromBounds, toBounds, fromSide, toSide, waypoints, channel } = plan;
+    const { a, from, to, fromBounds, toBounds, fromSide, toSide, waypoints, channel, elbow } = plan;
     const start = portPoint(fromBounds, fromSide, plan.startT);
     const end = portPoint(toBounds, toSide, plan.endT);
     const route = channel
@@ -1300,6 +1344,9 @@ export function planExcalidrawScene(input: PlanInput): PlannedScene {
       strokeStyle: a.strokeStyle,
       startFocus: focusFromT(plan.startT),
       endFocus: focusFromT(plan.endT),
+      ...(elbow
+        ? { elbowed: true, startFixedPoint: fixedPointFor(fromSide, plan.startT), endFixedPoint: fixedPointFor(toSide, plan.endT) }
+        : {}),
     });
     (from.boundElements as Array<Record<string, unknown>>).push({ id: arrow.id, type: "arrow" });
     (to.boundElements as Array<Record<string, unknown>>).push({ id: arrow.id, type: "arrow" });
@@ -1727,7 +1774,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
       "Express relationships WITHOUT arrows where possible: put related boxes in a 'frame' (containment), or rely on column/row order (a pipeline). Only draw an arrow for a relationship that proximity/grouping can't show.",
       "Keep one flow direction; avoid back-edges, bidirectional pairs, and high fan-out (a box with >4 arrows is a hairball — group or split).",
       "Omit x/y — nodes auto-lay-out from the arrows; arrows bind to box edges. Leave direction 'auto' unless forcing 'LR'/'TB'. Label only non-obvious arrows.",
-      "Routing default gives elbow-style arrows: orthogonal routes with rounded corners, every arrow bound to both box edges (never floating/pointing at nothing). Pass 'straight' for simple direct lines.",
+      "Routing default is 'elbow' (real Excalidraw elbow arrows — right-angle, auto-routing, bound to both box edges so they never float). Pass 'straight' for simple direct lines.",
       "Use draw_mermaid for strict standard types (sequence, flowchart, state, gantt, class, ER) — it auto-lays-out and prevents arrow soup.",
     ],
     async execute(_toolCallId, params) {
@@ -1739,15 +1786,15 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
         arrows: params.arrows as PlanArrow[] | undefined,
         title: params.title,
         direction: (params.direction as Direction | "auto" | undefined) || "auto",
-        // Elbow-style: orthogonal route with rounded corners, every arrow bound
-        // to both box edges. "elbow"/"orthogonal" are equivalent; default to it.
-        routing: (params.routing as Routing | undefined) || "orthogonal",
+        // Default to real Excalidraw elbow arrows (the 3rd "Arrow type"), bound
+        // to both box edges. Same-frame arrows stay non-elbow (Obsidian #2187).
+        routing: (params.routing as Routing | undefined) || "elbow",
       });
 
       const routingNote =
         planned.routing === "straight"
           ? "\n  Arrows: straight (bound to box edges)"
-          : "\n  Arrows: elbow-style — rounded corners, bound to both box edges";
+          : "\n  Arrows: elbow (native Excalidraw elbow type, bound to box edges)";
 
       const sceneJson = buildSceneJson(planned.scene);
 
