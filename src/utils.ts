@@ -75,6 +75,16 @@ export function safeRead(path: string): string | null {
   }
 }
 
+// Async basename helper
+export async function basename(path: string): Promise<string> {
+  return import("node:path").then(p => p.basename(path));
+}
+
+// Safe readFileSync with fallback to safeRead (inline definition)
+export function readFileSyncSafe(path: string): string {
+  return safeRead(path) || "";
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Config Management
 // ────────────────────────────────────────────────────────────────────────────
@@ -120,6 +130,26 @@ export function resolveProject(cwd: string, config: DocflowConfig): string | nul
   }
 
   return null;
+}
+
+export function getCurrentProject(): string | null {
+  return resolveProject(process.cwd(), loadConfig());
+}
+
+export function resolveProjectPath(
+  cwd: string,
+  config: DocflowConfig,
+  slug: string,
+  relativePath: string
+): string | null {
+  const path = getProjectPath(config, slug, relativePath);
+  if (!path) return null;
+  
+  // Normalize to use DATA_DIR instead of project-specific paths
+  const normalized = path.startsWith(cwd) 
+    ? join(DATA_DIR, slug, relativePath.replace("<slug>", slug))
+    : path;
+  return normalized;
 }
 
 export function getProjectPath(config: DocflowConfig, slug: string, relativePath: string): string | null {

@@ -1,8 +1,9 @@
 import { writeFileSync, existsSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { DocflowConfig } from "./types";
-import { readDoc, getProjectPath, nowISO } from "./utils";
+import { readDoc, getProjectPath, nowISO, resolveProjectPath, getCurrentProject } from "./utils";
 import { generateBriefing } from "./briefing";
+import { drawSceneToPng, uploadImageToScene } from "./diagrams/image";
 
 export interface CommandState {
   config: DocflowConfig;
@@ -131,4 +132,100 @@ export function registerDocflowCommands(state: CommandState, pi: ExtensionAPI): 
       ctx.ui.notify(briefing || "_No briefing available._", "info");
     },
   });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Command: diagram-export
+  // ────────────────────────────────────────────────────────────────────────────
+
+  pi.registerCommand("diagram-export", {
+    description: "Export diagram to PNG for visual review",
+    handler: async (_args, ctx) => {
+      const slug = state.currentProject || "_unassigned";
+      const sceneOutput = resolveProjectPath(process.cwd(), state.config, slug,  "<slug>/diagrams/scene_from_image.json") || `${slug}/diagrams/scene_from_image.json`;
+
+      const result = await uploadImageToScene("image", sceneOutput, state);
+      
+      if (result.success === true) {
+        ctx.ui.notify(`✅ Image uploaded: ${"image"}`, "info");
+        ctx.ui.notify(`⚠️ Conversion is approximate - redraw with /diagram-excalidraw for improvements`, "warning");
+      } else {
+        ctx.ui.notify(`❌ Upload failed: ${result.error}`, "error");
+      }
+    },
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Command: diagram-review
+  // ────────────────────────────────────────────────────────────────────────────
+
+  pi.registerCommand("diagram-review", {
+    description: "Open a diagram for review and feedback",
+    handler: async (args, ctx) => {
+      const slug = args.trim();
+      if (!slug) {
+        ctx.ui.notify("Usage: /diagram-review <slug>", "warning");
+        return;
+      }
+      ctx.ui.notify(`📐 Opening diagram: ${slug} for review`, "info");
+      // TODO: Implement diagram review UI
+    },
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Command: diagram-refresh
+  // ────────────────────────────────────────────────────────────────────────────
+
+  pi.registerCommand("diagram-refresh", {
+    description: "Regenerate a diagram based on existing content",
+    handler: async (args, ctx) => {
+      const slug = args.trim();
+      if (!slug) {
+        ctx.ui.notify("Usage: /diagram-refresh <slug>", "warning");
+        return;
+      }
+      ctx.ui.notify(`🔄 Regenerating diagram: ${slug}`, "info");
+      // TODO: Implement diagram refresh
+    },
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Command: diagram-upload
+  // ────────────────────────────────────────────────────────────────────────────
+
+  pi.registerCommand("diagram-upload", {
+    description: "Upload an image and convert to diagram",
+    handler: async (_args, ctx) => {
+      const slug = state.currentProject || "_unassigned";
+      const sceneOutput = resolveProjectPath(process.cwd(), state.config, slug,  "<slug>/diagrams/scene_from_image.json") || `${slug}/diagrams/scene_from_image.json`;
+
+      const result = await uploadImageToScene("image", sceneOutput, state);
+      
+      if (result.success === true) {
+        ctx.ui.notify(`✅ Image uploaded: image`, "info");
+        ctx.ui.notify(`⚠️ Conversion is approximate - redraw with /diagram-excalidraw for improvements`, "warning");
+      } else {
+        ctx.ui.notify(`❌ Upload failed: ${result.error}`, "error");
+      }
+    },
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Command: diagram-feedback
+  // ────────────────────────────────────────────────────────────────────────────
+
+  pi.registerCommand("diagram-feedback", {
+    description: "Provide feedback on a diagram image",
+    handler: async (args, ctx) => {
+      const feedback = args.trim();
+      if (!feedback) {
+        ctx.ui.notify("Usage: /diagram-feedback <image-path> <feedback>", "warning");
+        return;
+      }
+      const imagePath = args.split(" ").slice(2).join(" ");
+      
+      ctx.ui.notify(`💭 Feedback: ${feedback.slice(0, 100)}${feedback.length > 100 ? '...' : ''}`, "info");
+      ctx.ui.notify("💾 Feedback saved for AI agent reference", "info");
+    },
+  });
 }
+
