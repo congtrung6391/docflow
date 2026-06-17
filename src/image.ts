@@ -11,10 +11,8 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { StringEnum } from "@earendil-works/pi-ai";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, basename, join, isAbsolute } from "node:path";
-import { DATA_DIR, getCurrentProject, resolveProjectPath, readFileSyncSafe } from "../utils";
+import { basename, join } from "node:path";
+import { DATA_DIR, getCurrentProject, resolveProjectPath, readFileSyncSafe } from "./utils";
 
 // Type declarations for jsdom - using 'as any' to bypass strict type checking
 // The actual runtime behavior is what matters for jsdom
@@ -150,7 +148,7 @@ export async function uploadImageToScene(
 // Tool Registrations
 // ────────────────────────────────────────────────────────────────────────────
 
-export function registerImageTools(pi: ExtensionAPI, state: any): void {
+export function registerImageTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "draw_to_png",
     label: "draw_to_png",

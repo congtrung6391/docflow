@@ -31,6 +31,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { dirname, basename, join, isAbsolute } from "node:path";
 import { DATA_DIR } from "./utils";
+import { registerImageTools } from "./image";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Excalidraw element types (simplified for AI)
@@ -1974,6 +1975,8 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
       }
     },
   });
+
+  registerImageTools(pi);
 
   // ──────────────────────────────────────────────────────────────────
   // Command: diagram
