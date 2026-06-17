@@ -1,9 +1,9 @@
 import { writeFileSync, existsSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { DocflowConfig } from "./types";
-import { readDoc, getProjectPath, nowISO, resolveProjectPath, getCurrentProject } from "./utils";
+import { readDoc, getProjectPath, nowISO, resolveProjectPath } from "./utils";
 import { generateBriefing } from "./briefing";
-import { drawSceneToPng, uploadImageToScene } from "./diagrams/image";
+import { uploadImageToScene } from "./image";
 
 export interface CommandState {
   config: DocflowConfig;
