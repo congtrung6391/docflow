@@ -13,7 +13,7 @@ import { registerDocflowEvents, DocflowState } from "./events";
 import { registerDiagramTools } from "./diagrams";
 import { loadConfig, saveConfig, nowISO, getProjectPath } from "./utils";
 import { ensureProjectDocs, regenerateContextIndex, regenerateMasterIndex } from "./briefing";
-import type { DocflowConfig, SessionCard } from "./types";
+import type { DocflowConfig } from "./types";
 
 export default function docflowExtension(pi: ExtensionAPI): void {
   const config: DocflowConfig = loadConfig();
