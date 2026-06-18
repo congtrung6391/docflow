@@ -10,6 +10,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
     "jsdom": "^29.1.1",
     "typebox": "^1.1.0"
   },
@@ -17,10 +19,6 @@
     "@types/jsdom": "^28.0.3",
     "@types/node": "^24.0.0",
     "vitest": "^3.2.0"
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*"
   },
   "pi": {
     "extensions": [
