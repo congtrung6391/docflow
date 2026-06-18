@@ -8,8 +8,8 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerDocflowRead, registerDocflowWrite, registerDocflowTask, registerDocflowSession, registerDocflowContext } from "./tools";
-import { registerDocflowCommands, CommandState } from "./commands";
-import { registerDocflowEvents, DocflowState } from "./events";
+import { registerDocflowCommands, type CommandState } from "./commands";
+import { registerDocflowEvents, type DocflowState } from "./events";
 import { registerDiagramTools } from "./diagrams";
 import { loadConfig, saveConfig, nowISO, getProjectPath } from "./utils";
 import { ensureProjectDocs, regenerateContextIndex, regenerateMasterIndex } from "./briefing";

@@ -7,7 +7,7 @@ import { parseKanbanColumns, getNextTaskId, rebuildKanban } from "./kanban";
 import { updateSessionInMarkdown } from "./session";
 import { generateBriefing, regenerateContextIndex, regenerateMasterIndex } from "./briefing";
 
-const StringEnum = (arr: string[]) => {
+const MakeEnum = (arr: string[]) => {
   return arr.reduce((acc, str) => {
     acc[str] = str;
     return acc;
@@ -25,7 +25,7 @@ export function registerDocflowRead(pi: ExtensionAPI, config: DocflowConfig, get
     description:
       "Read a project document from the shared vault. Use to check Plan.md, Design.md, Tasks.md, Decisions.md, _Context.md for a project.",
     parameters: Type.Object({
-      document: StringEnum(["plan", "design", "tasks", "sessions", "decisions", "context"]),
+      document: MakeEnum(["plan", "design", "tasks", "sessions", "decisions", "context"]),
       project: Type.Optional(Type.String()),
     }),
     promptSnippet: "Read a project document (plan, design, tasks, decisions, context)",
@@ -78,7 +78,7 @@ export function registerDocflowWrite(
     description:
       "Append to a project document. Use to log planning decisions, technical decisions, or track decisions with rejection rationale. Entries are append-only — one paragraph each.",
     parameters: Type.Object({
-      document: StringEnum(["plan", "design", "decisions"]),
+      document: MakeEnum(["plan", "design", "decisions"]),
       content: Type.String(),
       project: Type.Optional(Type.String()),
     }),
@@ -136,7 +136,7 @@ export function registerDocflowTask(
     description:
       "Manage tasks: create new, claim existing, mark done, block, or list. Use when splitting work into tasks, claiming work, or tracking progress.",
     parameters: Type.Object({
-      action: StringEnum(["new", "claim", "done", "block", "list"]),
+      action: MakeEnum(["new", "claim", "done", "block", "list"]),
       text: Type.Optional(Type.String()),
       reason: Type.Optional(Type.String()),
       project: Type.Optional(Type.String()),
@@ -283,7 +283,7 @@ export function registerDocflowSession(
     description:
       "Check session status or generate a context briefing. Shows project assignment, current task, and activity level.",
     parameters: Type.Object({
-      action: StringEnum(["status", "briefing"]),
+      action: MakeEnum(["status", "briefing"]),
       project: Type.Optional(Type.String()),
     }),
     promptSnippet: "Check session status or get briefing",
