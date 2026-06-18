@@ -1,11 +1,18 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { StringEnum } from "@earendil-works/pi-ai";
+// import { StringEnum } from "@earendil-works/pi-ai";
 import type { DocflowConfig, SessionCard } from "./types";
 import { readDoc, appendDoc, shortenId, minutesAgo } from "./utils";
 import { parseKanbanColumns, getNextTaskId, rebuildKanban } from "./kanban";
 import { updateSessionInMarkdown } from "./session";
 import { generateBriefing, regenerateContextIndex, regenerateMasterIndex } from "./briefing";
+
+const StringEnum = (arr: string[]) => {
+  return arr.reduce((acc, str) => {
+    acc[str] = str;
+    return acc;
+  }, {} as Record<string, string>);
+};
 
 // ────────────────────────────────────────────────────────────────────────────
 // Tool: docflow_read
@@ -37,7 +44,7 @@ export function registerDocflowRead(pi: ExtensionAPI, config: DocflowConfig, get
         decisions: "Decisions.md",
         context: "_Context.md",
       };
-      const docName = docMap[params.document];
+      const docName = docMap[params.document as string];
       const content = readDoc(config, slug, docName);
 
       if (!content) {
@@ -91,7 +98,7 @@ export function registerDocflowWrite(
         design: "Design.md",
         decisions: "Decisions.md",
       };
-      const docName = docMap[params.document];
+      const docName = docMap[params.document as string];
 
       const timestamp = new Date().toISOString();
       const entry = `## ${timestamp}\n\n${params.content}\n`;
