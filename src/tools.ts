@@ -7,10 +7,7 @@ import { updateSessionInMarkdown } from "./session";
 import { generateBriefing, regenerateContextIndex, regenerateMasterIndex } from "./briefing";
 
 const MakeEnum = (arr: string[]) => {
-  return arr.reduce((acc, str) => {
-    acc[str] = str;
-    return acc;
-  }, {} as Record<string, string>);
+  return Type.Unsafe<string>({ type: "string", enum: arr });
 };
 
 // ────────────────────────────────────────────────────────────────────────────
