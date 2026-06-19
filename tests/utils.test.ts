@@ -6,6 +6,7 @@ import {
   safeRead,
   resolveProject,
   getProjectPath,
+  getDocFileName,
 } from "../src/utils";
 import type { DocflowConfig } from "../src/types";
 import * as fs from "node:fs";
@@ -241,5 +242,37 @@ describe("utils", () => {
       );
       expect(result).toBe(expected);
     });
+
+  describe("getDocFileName", () => {
+    it("resolves standard documents correctly", () => {
+      expect(getDocFileName("plan")).toBe("Plan.md");
+      expect(getDocFileName("design")).toBe("Design.md");
+      expect(getDocFileName("tasks")).toBe("Tasks.md");
+      expect(getDocFileName("sessions")).toBe("Sessions.md");
+      expect(getDocFileName("decisions")).toBe("Decisions.md");
+      expect(getDocFileName("context")).toBe("_Context.md");
+    });
+
+    it("capitalizes standard words for custom documents", () => {
+      expect(getDocFileName("spike")).toBe("Spike.md");
+      expect(getDocFileName("user story")).toBe("User Story.md");
+      expect(getDocFileName("market-research")).toBe("Market Research.md");
+    });
+
+    it("keeps acronyms fully capitalized", () => {
+      expect(getDocFileName("rfc")).toBe("RFC.md");
+      expect(getDocFileName("prd")).toBe("PRD.md");
+      expect(getDocFileName("api")).toBe("API.md");
+    });
+
+    it("handles pre-existing .md extensions and trim whitespace", () => {
+      expect(getDocFileName("  PRD.md  ")).toBe("PRD.md");
+      expect(getDocFileName("spike.md")).toBe("Spike.md");
+    });
+
+    it("falls back to default for empty names", () => {
+      expect(getDocFileName("")).toBe("Document.md");
+    });
+  });
   });
 });

@@ -168,6 +168,45 @@ export function getProjectPath(config: DocflowConfig, slug: string, relativePath
 // Document I/O
 // ────────────────────────────────────────────────────────────────────────────
 
+export function getDocFileName(docType: string): string {
+  const docMap: Record<string, string> = {
+    plan: "Plan.md",
+    design: "Design.md",
+    tasks: "Tasks.md",
+    sessions: "Sessions.md",
+    decisions: "Decisions.md",
+    context: "_Context.md",
+  };
+  const normalized = docType.toLowerCase().trim();
+  if (docMap[normalized]) {
+    return docMap[normalized];
+  }
+
+  let base = docType.trim();
+  if (base.toLowerCase().endsWith(".md")) {
+    base = base.slice(0, -3).trim();
+  }
+
+  if (!base) {
+    return "Document.md";
+  }
+
+  const words = base.split(/[\s-_]+/);
+  const formattedWords = words.map((word) => {
+    if (!word) return "";
+    if (word === word.toUpperCase() && word.length > 1) {
+      return word;
+    }
+    const upper = word.toUpperCase();
+    if (["RFC", "PRD", "API", "UI", "UX", "QA"].includes(upper)) {
+      return upper;
+    }
+    return word.charAt(0).toUpperCase() + word.slice(1);
+  });
+
+  return `${formattedWords.filter(Boolean).join(" ")}.md`;
+}
+
 export function readDoc(config: DocflowConfig, slug: string, docName: string): string | null {
   const path = getProjectPath(config, slug, `<slug>/${docName}`);
   return path ? safeRead(path) : null;

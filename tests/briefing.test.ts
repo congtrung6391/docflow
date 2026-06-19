@@ -264,5 +264,37 @@ describe("briefing", () => {
       const indexContent = fs.readFileSync(path.join(tmpDir, "_Index.md"), "utf-8");
       expect(indexContent).toContain("Master Project 2");
     });
+
+  describe("regenerateContextIndex", () => {
+    it("lists standard and custom documents correctly", () => {
+      const projectDir = path.join(tmpDir, "rcip");
+      fs.mkdirSync(projectDir, { recursive: true });
+      fs.writeFileSync(path.join(projectDir, "Plan.md"), "# Plan\nSome plan content");
+      fs.writeFileSync(path.join(projectDir, "PRD.md"), "# PRD\nSome PRD content");
+      fs.writeFileSync(path.join(projectDir, "RFC.md"), "# RFC\nSome RFC content");
+
+      const config: DocflowConfig = {
+        vaultPath: tmpDir,
+        projects: {
+          rcip: {
+            name: "Context Index Project",
+            createdAt: "2025-01-01T00:00:00.000Z",
+            worktreePath: "/projects/rcip",
+          },
+        },
+      };
+
+      regenerateContextIndex(config, "rcip");
+
+      const contextPath = path.join(projectDir, "_Context.md");
+      expect(fs.existsSync(contextPath)).toBe(true);
+
+      const content = fs.readFileSync(contextPath, "utf-8");
+      expect(content).toContain("- [[Plan.md]] — *Updated*");
+      expect(content).toContain("- [[Design.md]] — *Not set*");
+      expect(content).toContain("- [[PRD.md]] — *Updated*");
+      expect(content).toContain("- [[RFC.md]] — *Updated*");
+    });
+  });
   });
 });

@@ -27,7 +27,6 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { StringEnum } from "@earendil-works/pi-ai";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { dirname, basename, join, isAbsolute } from "node:path";
 import { DATA_DIR } from "./utils";
@@ -1725,10 +1724,10 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
       filePath: Type.Optional(Type.String()),
       title: Type.Optional(Type.String()),
       description: Type.Optional(Type.String()),
-      direction: Type.Optional(StringEnum(["auto", "LR", "TB"])),
-      routing: Type.Optional(StringEnum(["straight", "orthogonal", "elbow"])),
+      direction: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("LR"), Type.Literal("TB")])),
+      routing: Type.Optional(Type.Union([Type.Literal("straight"), Type.Literal("orthogonal"), Type.Literal("elbow")])),
       elements: Type.Optional(Type.Array(Type.Object({
-        type: StringEnum(["box", "circle", "diamond", "text", "note", "image", "frame"]),
+        type: Type.Union([Type.Literal("box"), Type.Literal("circle"), Type.Literal("diamond"), Type.Literal("text"), Type.Literal("note"), Type.Literal("image"), Type.Literal("frame")]),
         label: Type.String(),
         x: Type.Optional(Type.Number()),
         y: Type.Optional(Type.Number()),
@@ -1833,7 +1832,7 @@ export function registerDiagramTools(pi: ExtensionAPI, resolveProjectPath: (slug
       project: Type.Optional(Type.String()),
       filePath: Type.Optional(Type.String()),
       title: Type.Optional(Type.String()),
-      type: StringEnum(["sequence", "flowchart", "state", "gantt", "class", "er"]),
+      type: Type.Union([Type.Literal("sequence"), Type.Literal("flowchart"), Type.Literal("state"), Type.Literal("gantt"), Type.Literal("class"), Type.Literal("er")]),
       description: Type.Optional(Type.String()),
       // Parameters vary by type
       nodes: Type.Optional(Type.String()),

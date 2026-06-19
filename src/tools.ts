@@ -1,8 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-// import { StringEnum } from "@earendil-works/pi-ai";
 import type { DocflowConfig, SessionCard } from "./types";
-import { readDoc, appendDoc, shortenId, minutesAgo } from "./utils";
+import { readDoc, appendDoc, shortenId, minutesAgo, getDocFileName } from "./utils";
 import { parseKanbanColumns, getNextTaskId, rebuildKanban } from "./kanban";
 import { updateSessionInMarkdown } from "./session";
 import { generateBriefing, regenerateContextIndex, regenerateMasterIndex } from "./briefing";
@@ -25,10 +24,13 @@ export function registerDocflowRead(pi: ExtensionAPI, config: DocflowConfig, get
     description:
       "Read a project document from the shared vault. Use to check Plan.md, Design.md, Tasks.md, Decisions.md, _Context.md for a project.",
     parameters: Type.Object({
-      document: MakeEnum(["plan", "design", "tasks", "sessions", "decisions", "context"]),
+      document: Type.String({
+        description:
+          "The document to read. Can be standard ('plan', 'design', 'tasks', 'sessions', 'decisions', 'context') or any custom document name (e.g. 'rfc', 'prd', 'spike').",
+      }),
       project: Type.Optional(Type.String()),
     }),
-    promptSnippet: "Read a project document (plan, design, tasks, decisions, context)",
+    promptSnippet: "Read a project document (plan, design, tasks, decisions, context, or any custom document like rfc, prd)",
     promptGuidelines: [
       "Use docflow_read when the agent needs to reference a project document.",
       "Always read _Context.md first to get project overview.",
@@ -36,15 +38,7 @@ export function registerDocflowRead(pi: ExtensionAPI, config: DocflowConfig, get
     ],
     async execute(_toolCallId, params) {
       const slug = params.project || getProject();
-      const docMap: Record<string, string> = {
-        plan: "Plan.md",
-        design: "Design.md",
-        tasks: "Tasks.md",
-        sessions: "Sessions.md",
-        decisions: "Decisions.md",
-        context: "_Context.md",
-      };
-      const docName = docMap[params.document as string];
+      const docName = getDocFileName(params.document);
       const content = readDoc(config, slug, docName);
 
       if (!content) {
@@ -78,11 +72,14 @@ export function registerDocflowWrite(
     description:
       "Append to a project document. Use to log planning decisions, technical decisions, or track decisions with rejection rationale. Entries are append-only — one paragraph each.",
     parameters: Type.Object({
-      document: MakeEnum(["plan", "design", "decisions"]),
+      document: Type.String({
+        description:
+          "The document to append to. Can be standard ('plan', 'design', 'decisions') or any custom document name (e.g. 'rfc', 'prd', 'spike').",
+      }),
       content: Type.String(),
       project: Type.Optional(Type.String()),
     }),
-    promptSnippet: "Append to project document (plan, design, decisions)",
+    promptSnippet: "Append to project document (plan, design, decisions, or any custom document like rfc, prd)",
     promptGuidelines: [
       "Use docflow_write (plan) for scope changes, milestone reordering, resolved open questions.",
       "Use docflow_write (design) for architecture choices, trade-offs, new constraints, accepted risks.",
@@ -93,12 +90,7 @@ export function registerDocflowWrite(
       const slug = params.project || getProject();
       ensureProject(slug);
 
-      const docMap: Record<string, string> = {
-        plan: "Plan.md",
-        design: "Design.md",
-        decisions: "Decisions.md",
-      };
-      const docName = docMap[params.document as string];
+      const docName = getDocFileName(params.document);
 
       const timestamp = new Date().toISOString();
       const entry = `## ${timestamp}\n\n${params.content}\n`;

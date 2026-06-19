@@ -61,6 +61,35 @@ export function regenerateContextIndex(config: DocflowConfig, slug: string): voi
   const plan = safeRead(planPath ?? "") ?? "";
   const design = safeRead(designPath ?? "") ?? "";
 
+  const docLines = [
+    `- [[Plan.md]] ${plan ? "— *Updated*" : "— *Not set*"}`,
+    `- [[Design.md]] ${design ? "— *Updated*" : "— *Not set*"}`,
+    "- [[Tasks.md]] — Kanban board (`kanban-plugin: board`)",
+    "- [[Sessions.md]] — Session Kanban board (`kanban-plugin: board`)",
+    "- [[Decisions.md]]",
+  ];
+
+  // Scan project folder for custom documents
+  const dir = getProjectPath(config, slug, "<slug>");
+  if (dir && existsSync(dir)) {
+    try {
+      const files = readdirSync(dir);
+      const standard = ["plan.md", "design.md", "tasks.md", "sessions.md", "decisions.md", "_context.md", "readme.md"];
+      const customDocs = files
+        .filter((f) => f.endsWith(".md") && !standard.includes(f.toLowerCase()))
+        .sort((a, b) => a.localeCompare(b));
+
+      for (const doc of customDocs) {
+        const docPath = getProjectPath(config, slug, `<slug>/${doc}`);
+        const docContent = safeRead(docPath ?? "") ?? "";
+        const status = docContent ? "— *Updated*" : "— *Not set*";
+        docLines.push(`- [[${doc}]] ${status}`);
+      }
+    } catch {
+      // Ignore if dir cannot be read
+    }
+  }
+
   const lines = [
     "# Project Context Index",
     "",
@@ -68,11 +97,7 @@ export function regenerateContextIndex(config: DocflowConfig, slug: string): voi
     "",
     "## Documents",
     "",
-    `- [[Plan.md]] ${plan ? "— *Updated*" : "— *Not set*"}`,
-    `- [[Design.md]] ${design ? "— *Updated*" : "— *Not set*"}`,
-    "- [[Tasks.md]] — Kanban board (`kanban-plugin: board`)",
-    "- [[Sessions.md]] — Session Kanban board (`kanban-plugin: board`)",
-    "- [[Decisions.md]]",
+    ...docLines,
     "",
     "## Instructions",
     "",

@@ -166,8 +166,7 @@ export function registerDocflowEvents(state: DocflowState, pi: ExtensionAPI): vo
       const filePath = args?.path as string | undefined;
       if (filePath) {
         const fileName = filePath.split("/").pop() || "";
-        const docMap = ["Plan.md", "Design.md", "Decisions.md", "Tasks.md"];
-        if (docMap.includes(fileName)) {
+        if (fileName.endsWith(".md") && fileName.toLowerCase() !== "_context.md") {
           regenerateContextIndex(state.config, state.currentProject);
         }
       }
