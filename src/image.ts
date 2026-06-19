@@ -245,7 +245,7 @@ export function registerImageTools(pi: ExtensionAPI): void {
     parameters: Type.Object({
       project: Type.Optional(Type.String()),
       image: Type.String(),
-      feedback: Type.String({ exact: true }),
+      feedback: Type.String(),
     }),
     promptSnippet: "Provide feedback on diagram image",
     promptGuidelines: [
