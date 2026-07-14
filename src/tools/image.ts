@@ -12,7 +12,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { basename, join } from "node:path";
-import { DATA_DIR, getCurrentProject, resolveProjectPath, readFileSyncSafe } from "./utils";
+import { DATA_DIR, getCurrentProject, resolveProjectPath, readFileSyncSafe } from "../utils";
 
 // Type declarations for jsdom - using 'as any' to bypass strict type checking
 // The actual runtime behavior is what matters for jsdom

@@ -7,10 +7,9 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerDocflowRead, registerDocflowWrite, registerDocflowTask, registerDocflowSession, registerDocflowContext } from "./tools";
+import registerTools from "../tools";
 import { registerDocflowCommands, type CommandState } from "./commands";
 import { registerDocflowEvents, type DocflowState } from "./events";
-import { registerDiagramTools } from "./diagrams";
 import { loadConfig, saveConfig, nowISO, getProjectPath } from "./utils";
 import { ensureProjectDocs, regenerateContextIndex, regenerateMasterIndex } from "./briefing";
 import type { DocflowConfig } from "./types";
@@ -64,25 +63,19 @@ export default function docflowExtension(pi: ExtensionAPI): void {
     regenerateMasterIndex(config);
   };
 
+  const getCurrentSessionCard = () => state.currentSessionCard;
+
   // ──────────────────────────────────────────────────────────────────────
   // Register Tools
   // ──────────────────────────────────────────────────────────────────────
 
-  registerDocflowRead(pi, config, getProject);
-  registerDocflowWrite(pi, config, getProject, ensureProject);
-  registerDocflowTask(pi, config, getProject, ensureProject, () => state.currentSessionCard);
-  registerDocflowSession(pi, config, getProject, () => state.currentSessionCard);
-  registerDocflowContext(pi, config, getProject, ensureProject);
-
-  // ──────────────────────────────────────────────────────────────────────
-  // Register Diagram Tools
-  // ──────────────────────────────────────────────────────────────────────
-
-  registerDiagramTools(
+  registerTools({
     pi,
-    (slug: string, relativePath: string) => getProjectPath(config, slug, relativePath),
-    getProject
-  );
+    config,
+    getProject,
+    ensureProject,
+    getCurrentSessionCard, 
+  })
 
   // ──────────────────────────────────────────────────────────────────────
   // Register Commands

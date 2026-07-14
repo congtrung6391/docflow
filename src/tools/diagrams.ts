@@ -29,7 +29,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { dirname, basename, join, isAbsolute } from "node:path";
-import { DATA_DIR } from "./utils";
+import { DATA_DIR } from "../utils";
 import { registerImageTools } from "./image";
 
 // ────────────────────────────────────────────────────────────────────────────

@@ -1,10 +1,11 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type { DocflowConfig, SessionCard } from "./types";
-import { readDoc, appendDoc, shortenId, minutesAgo, getDocFileName } from "./utils";
-import { parseKanbanColumns, getNextTaskId, rebuildKanban } from "./kanban";
-import { updateSessionInMarkdown } from "./session";
-import { generateBriefing, regenerateContextIndex, regenerateMasterIndex } from "./briefing";
+import type { DocflowConfig, SessionCard } from "../types";
+import { readDoc, appendDoc, shortenId, minutesAgo, getDocFileName, getProjectPath } from "../utils";
+import { parseKanbanColumns, getNextTaskId, rebuildKanban } from "../kanban";
+import { updateSessionInMarkdown } from "../session";
+import { generateBriefing, regenerateContextIndex, regenerateMasterIndex } from "../briefing";
+import { registerDiagramTools } from "./diagrams";
 
 const MakeEnum = (arr: string[]) => {
   return Type.Unsafe<string>({ type: "string", enum: arr });
@@ -14,7 +15,7 @@ const MakeEnum = (arr: string[]) => {
 // Tool: docflow_read
 // ────────────────────────────────────────────────────────────────────────────
 
-export function registerDocflowRead(pi: ExtensionAPI, config: DocflowConfig, getProject: () => string): void {
+function registerDocflowRead(pi: ExtensionAPI, config: DocflowConfig, getProject: () => string): void {
   pi.registerTool({
     name: "docflow_read",
     label: "docflow_read",
@@ -23,7 +24,7 @@ export function registerDocflowRead(pi: ExtensionAPI, config: DocflowConfig, get
     parameters: Type.Object({
       document: Type.String({
         description:
-          "The document to read. Can be standard ('plan', 'design', 'tasks', 'sessions', 'decisions', 'context') or any custom document name (e.g. 'rfc', 'prd', 'spike').",
+"The document to read. Can be standard ('plan', 'design', 'tasks', 'sessions', 'decisions', 'context') or any custom document name (e.g. 'rfc', 'prd', 'spike').",
       }),
       project: Type.Optional(Type.String()),
     }),
@@ -50,14 +51,14 @@ export function registerDocflowRead(pi: ExtensionAPI, config: DocflowConfig, get
         details: { document: params.document, project: slug, length: content.length },
       };
     },
-  });
+});
 }
 
 // ────────────────────────────────────────────────────────────────────────────
 // Tool: docflow_write
 // ────────────────────────────────────────────────────────────────────────────
 
-export function registerDocflowWrite(
+function registerDocflowWrite(
   pi: ExtensionAPI,
   config: DocflowConfig,
   getProject: () => string,
@@ -112,7 +113,7 @@ export function registerDocflowWrite(
 // Tool: docflow_task
 // ────────────────────────────────────────────────────────────────────────────
 
-export function registerDocflowTask(
+function registerDocflowTask(
   pi: ExtensionAPI,
   config: DocflowConfig,
   getProject: () => string,
@@ -260,7 +261,7 @@ export function registerDocflowTask(
 // Tool: docflow_session
 // ────────────────────────────────────────────────────────────────────────────
 
-export function registerDocflowSession(
+function registerDocflowSession(
   pi: ExtensionAPI,
   config: DocflowConfig,
   getProject: () => string,
@@ -290,11 +291,11 @@ export function registerDocflowSession(
                   project: slug,
                   session: sessionCard
                     ? {
-                        id: shortenId(sessionCard.id, 5),
-                        task: sessionCard.claimedTask,
-                        status: sessionCard.status,
-                        activityMinAgo: minutesAgo(sessionCard.lastActivity),
-                      }
+                      id: shortenId(sessionCard.id, 5),
+                      task: sessionCard.claimedTask,
+                      status: sessionCard.status,
+                      activityMinAgo: minutesAgo(sessionCard.lastActivity),
+                    }
                     : null,
                 },
                 null,
@@ -323,7 +324,7 @@ export function registerDocflowSession(
 // Tool: docflow_context
 // ────────────────────────────────────────────────────────────────────────────
 
-export function registerDocflowContext(
+function registerDocflowContext(
   pi: ExtensionAPI,
   config: DocflowConfig,
   getProject: () => string,
@@ -349,4 +350,30 @@ export function registerDocflowContext(
       };
     },
   });
+}
+
+export default function registerTools({
+  pi,
+  config,
+  getProject,
+  ensureProject,
+  getCurrentSessionCard,
+}: {
+  pi: ExtensionAPI,
+  config: DocflowConfig,
+  getProject: () => string,
+  ensureProject: (slug: string) => void,
+  getCurrentSessionCard: () => SessionCard | null 
+}): void {
+  registerDocflowRead(pi, config, getProject);
+  registerDocflowWrite(pi, config, getProject, ensureProject);
+  registerDocflowTask(pi, config, getProject, ensureProject, getCurrentSessionCard);
+  registerDocflowSession(pi, config, getProject, getCurrentSessionCard);
+  registerDocflowContext(pi, config, getProject, ensureProject);
+
+  registerDiagramTools(
+    pi,
+    (slug: string, relativePath: string) => getProjectPath(config, slug, relativePath),
+    getProject
+  );
 }

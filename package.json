@@ -22,13 +22,13 @@
   },
   "pi": {
     "extensions": [
-      "./index.ts"
+      "./src/index.ts"
     ],
     "skills": [
       "./skills"
     ]
   },
   "omp": {
-    "extensions": ["./index.ts"]
+    "extensions": ["./src/index.ts"]
   }
 }
