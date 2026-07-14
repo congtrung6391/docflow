@@ -7,7 +7,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import registerTools from "../tools";
+import registerTools from "./tools";
 import { registerDocflowCommands, type CommandState } from "./commands";
 import { registerDocflowEvents, type DocflowState } from "./events";
 import { loadConfig, saveConfig, nowISO, getProjectPath } from "./utils";
