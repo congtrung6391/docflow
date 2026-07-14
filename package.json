@@ -1,6 +1,6 @@
 {
   "name": "docflow",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Document-driven kanban for Pi — lightweight project tracking with auto-briefing and diagram support",
   "main": "./src/index.ts",
   "scripts": {
@@ -27,5 +27,8 @@
     "skills": [
       "./skills"
     ]
+  },
+  "omp": {
+    "extensions": ["./index.ts"]
   }
 }
