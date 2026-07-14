@@ -3,7 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { DocflowConfig } from "./types";
 import { readDoc, getProjectPath, nowISO, resolveProjectPath } from "./utils";
 import { generateBriefing } from "./briefing";
-import { uploadImageToScene } from "./image";
+import { uploadImageToScene } from "./tools/image";
 
 export interface CommandState {
   config: DocflowConfig;
