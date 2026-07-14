@@ -63,19 +63,17 @@ export default function docflowExtension(pi: ExtensionAPI): void {
     regenerateMasterIndex(config);
   };
 
-  const getCurrentSessionCard = () => state.currentSessionCard;
-
   // ──────────────────────────────────────────────────────────────────────
   // Register Tools
   // ──────────────────────────────────────────────────────────────────────
 
-  registerTools({
-    pi,
-    config,
-    getProject,
-    ensureProject,
-    getCurrentSessionCard, 
-  })
+  // registerTools({
+  //   pi,
+  //   config,
+  //   getProject,
+  //   ensureProject,
+  //   getCurrentSessionCard: () => state.currentSessionCard, 
+  // })
 
   // ──────────────────────────────────────────────────────────────────────
   // Register Commands

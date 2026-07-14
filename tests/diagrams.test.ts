@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { planExcalidrawScene, type PlanElement, type PlanArrow } from "../src/diagrams";
+import { planExcalidrawScene, type PlanElement, type PlanArrow } from "../src/tools/diagrams";
 
 type El = Record<string, any>;
 
@@ -41,7 +41,7 @@ const ARCH: { elements: PlanElement[]; arrows: PlanArrow[] } = {
 
 describe("diagrams", () => {
   it("exports the registration entry point", async () => {
-    const mod = await import("../src/diagrams");
+    const mod = await import("../src/tools/diagrams");
     expect(mod.registerDiagramTools).toBeDefined();
   });
 
