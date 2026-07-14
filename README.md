@@ -16,12 +16,31 @@ A lightweight, automatic task and session tracker that lives alongside your Obsi
 
 ## Install
 
+### For **omp** (Oh My Pi):
 ```bash
-git clone git@github.com:congtrung6391/docflow.git ~/.pi/agent/extensions/docflow
+# 1. Clone the repository into the omp extensions directory
+git clone git@github.com:congtrung6391/docflow.git ~/.omp/agent/extensions/docflow
+
+# 2. Install dependencies (required for the extension to load)
+cd ~/.omp/agent/extensions/docflow && npm install
 ```
 
-Then run `/reload` in Pi — the extension will be discovered automatically at `~/.pi/agent/extensions/docflow/index.ts`.
+### For **pi**:
+```bash
+# 1. Clone the repository into the pi extensions directory
+git clone git@github.com:congtrung6391/docflow.git ~/.pi/agent/extensions/docflow
 
+# 2. Install dependencies (required for the extension to load)
+cd ~/.pi/agent/extensions/docflow && npm install
+```
+
+Then run `/reload` in your agent session — the extension will be discovered and loaded automatically.
+
+### Developer / Local Workspace Link
+If you are developing or running directly from the project directory, you can link the local workspace instead of copying:
+```bash
+omp plugin link .
+```
 ## Quick Start
 
 ```
